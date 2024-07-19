@@ -8,5 +8,8 @@
   "compatibleCoreVersion": "12.5.328",
   "scripts": [ "scripts/hex-generator.js" ],
   "styles": [ "styles/hex-generator.css" ],
-  "packs": []
+  "packs": [],
+  "url": "https://github.com/NeuroTR0PHY/Hex-Map-Generator",
+  "manifest": "https://github.com/NeuroTR0PHY/Hex-Map-Generator/module.json",
+  "download": "https://github.com/NeuroTR0PHY/Hex-Map-Generator/archive/main.zip"
 }
