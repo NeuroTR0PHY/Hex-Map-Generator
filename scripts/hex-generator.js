@@ -13,9 +13,6 @@ Hooks.once('ready', () => {
     });
 });
 
-// test
-
-// test 
 class HexMapGenerator extends FormApplication {
     static get defaultOptions() {
         return mergeObject(super.defaultOptions, {
