@@ -1,4 +1,74 @@
-﻿// Register the module and add a button to the UI
+﻿// Perlin noise generation
+class PerlinNoise {
+    constructor(seed) {
+        this.p = [];
+        this.permutation = [];
+        this.seed(seed);
+    }
+
+    seed(seed) {
+        this.permutation = [];
+        for (let i = 0; i < 256; i++) {
+            this.permutation[i] = Math.floor(seed * Math.random());
+        }
+
+        this.p = new Array(512);
+        for (let i = 0; i < 512; i++) {
+            this.p[i] = this.permutation[i % 256];
+        }
+    }
+
+    fade(t) {
+        return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+
+    lerp(t, a, b) {
+        return a + t * (b - a);
+    }
+
+    grad(hash, x, y) {
+        const h = hash & 15;
+        const u = h < 8 ? x : y;
+        const v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
+        return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    }
+
+    noise(x, y) {
+        const X = Math.floor(x) & 255;
+        const Y = Math.floor(y) & 255;
+
+        x -= Math.floor(x);
+        y -= Math.floor(y);
+
+        const u = this.fade(x);
+        const v = this.fade(y);
+
+        const A = this.p[X] + Y;
+        const AA = this.p[A];
+        const AB = this.p[A + 1];
+        const B = this.p[X + 1] + Y;
+        const BA = this.p[B];
+        const BB = this.p[B + 1];
+
+        return this.lerp(v, this.lerp(u, this.grad(this.p[AA], x, y), this.grad(this.p[BA], x - 1, y)),
+            this.lerp(u, this.grad(this.p[AB], x, y - 1), this.grad(this.p[BB], x - 1, y - 1)));
+    }
+
+    generate(width, height, scale) {
+        const noiseMap = [];
+        for (let y = 0; y < height; y++) {
+            const row = [];
+            for (let x = 0; x < width; x++) {
+                const noiseValue = this.noise(x * scale, y * scale);
+                row.push((noiseValue + 1) / 2); // Normalize to [0, 1]
+            }
+            noiseMap.push(row);
+        }
+        return noiseMap;
+    }
+}
+
+// Register the module and add a button to the UI
 Hooks.once('ready', () => {
     const buttonHtml = `
     <div class="control-icon hex-map-generator">
@@ -37,8 +107,9 @@ class HexMapGenerator extends FormApplication {
     }
 }
 
-function generatePerlinNoise(width, height, seed) {
-    // Implement Perlin noise generation based on seed
+function generatePerlinNoise(width, height, seed, scale = 0.1) {
+    const perlin = new PerlinNoise(seed);
+    return perlin.generate(width, height, scale);
 }
 
 function generateHexMap(config) {
