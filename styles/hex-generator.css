@@ -1,6 +1,11 @@
 ﻿/* Add your custom styles here */
-.hex-map-generator {
+#controls .scene-control-tools .control-icon.hex-map-generator {
     width: 32px;
     height: 32px;
     cursor: pointer;
 }
+
+    #controls .scene-control-tools .control-icon.hex-map-generator img {
+        width: 100%;
+        height: 100%;
+    }

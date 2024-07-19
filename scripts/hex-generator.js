@@ -1,4 +1,5 @@
-﻿// Perlin noise generation
+﻿console.log("Procedural Hex Maps module script starting");
+// Perlin noise generation
 class PerlinNoise {
     constructor(seed) {
         this.p = [];
@@ -68,27 +69,13 @@ class PerlinNoise {
     }
 }
 
-// Register the module and add a button to the UI
-Hooks.once('ready', () => {
-    const buttonHtml = `
-    <div class="control-icon hex-map-generator">
-      <img src="path/to/icon.png" title="Hex Map Generator">
-    </div>
-  `;
-
-    $('.scene-control-tools').append(buttonHtml);
-
-    $('.control-icon.hex-map-generator').click(() => {
-        new HexMapGenerator().render(true);
-    });
-});
 
 class HexMapGenerator extends FormApplication {
     static get defaultOptions() {
         return mergeObject(super.defaultOptions, {
             id: 'hex-map-generator',
             title: 'Hex Map Generator',
-            template: 'modules/hex-map-generator/templates/template.html',
+            template: 'modules/procedural-hex-maps/templates/hex-generator-config.html',
             width: 400
         });
     }
@@ -174,7 +161,7 @@ function determineTileType(biome, elevation, moisture, temperature, vegetationDe
 
 function placeHexTile(x, y, tileType) {
     const tileData = {
-        img: `modules/hex-map-generator/tiles/${tileType}.png`,
+        img: `modules/procedural-hex-maps/tiles/${tileType}.png`,
         x: x * canvas.grid.size,
         y: y * canvas.grid.size,
         width: canvas.grid.size,
@@ -204,3 +191,24 @@ const biomeProfiles = {
         vegetationDensity: { min: 0.1, max: 0.5 }
     }
 };
+
+Hooks.once('ready', () => {
+    console.log("Procedural Hex Maps module: ready hook fired");
+    const buttonHtml = `
+    <div class="control-icon hex-map-generator">
+      <img src="modules/procedural-hex-maps/hex.png" title="Hex Map Generator">
+    </div>
+  `;
+
+    // Change this line
+    $('#controls .scene-control-tools').append(buttonHtml);
+    console.log("Procedural Hex Maps module: button appended");
+
+    // And this line
+    $('#controls .scene-control-tools .control-icon.hex-map-generator').click(() => {
+        console.log("Procedural Hex Maps module: button clicked");
+        new HexMapGenerator().render(true);
+    });
+});
+
+console.log("Procedural Hex Maps module script finished");
