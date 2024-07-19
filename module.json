@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "author": "Nathan Baune",
   "minimumCoreVersion": "11.0.0",
-  "compatibleCoreVersion": "12.0.0",
+  "compatibleCoreVersion": "12.5.328",
   "scripts": [ "scripts/hex-generator.js" ],
   "styles": [ "styles/hex-generator.css" ],
   "packs": []
