@@ -1,0 +1,17 @@
+﻿{
+    "name": "procedural-hex-maps",
+    "title": "Prcoedural Hex Maps",
+    "description": "A module for placing hex tiles based on procedural generation.",
+    "version": "1.0.0",
+    "author": "Nathan Baune",
+    "minimumCoreVersion": "11.0.0",
+    "compatibleCoreVersion": "12.0.0",
+    "scripts": [ "scripts/hex-generator.js" ],
+    "styles": [ "styles/hex-generator.css" ],
+    "packs": [],
+    "esmodules": [],
+    "languages": [],
+    "url": "",
+    "manifest": "",
+    "download": ""
+}

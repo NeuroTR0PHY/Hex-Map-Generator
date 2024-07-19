@@ -1,0 +1,6 @@
+﻿/* Add your custom styles here */
+.hex-map-generator {
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+}
