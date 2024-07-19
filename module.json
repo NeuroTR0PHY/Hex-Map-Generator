@@ -3,7 +3,6 @@
   "title": "Procedural Hex Maps",
   "description": "A module for placing hex tiles based on procedural generation.",
   "version": "0.0.1",
-  "author": "Nathan Baune",
   "minimumCoreVersion": "11.0.0",
   "compatibleCoreVersion": "12.5.329",
   "scripts": [ "scripts/hex-generator.js" ],
