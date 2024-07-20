@@ -1,14 +1,17 @@
 {
-  "name": "procedural-hex-maps",
-  "title": "Procedural Hex Maps",
-  "description": "A module for placing hex tiles based on procedural generation.",
-  "version": "0.0.1",
-  "minimumCoreVersion": "11.0.0",
-  "compatibleCoreVersion": "12.5.329",
-  "scripts": [ "scripts/hex-generator.js" ],
-  "styles": [ "styles/hex-generator.css" ],
-  "packs": [],
-  "url": "https://github.com/NeuroTR0PHY/Hex-Map-Generator",
-  "manifest": "https://github.com/NeuroTR0PHY/Hex-Map-Generator/raw/main/module.json",
-  "download": "https://github.com/NeuroTR0PHY/Hex-Map-Generator/archive/refs/tags/WIP.zip"
+    "name": "procedural-hex-maps",
+    "title": "Procedural Hex Maps",
+    "description": "A module for placing hex tiles based on procedural generation.",
+    "version": "0.0.1",
+    "minimumCoreVersion": "11.0.0",
+    "compatibleCoreVersion": "12.5.329",
+    "scripts": [
+        "scripts/seedrandom.min.js",
+        "scripts/hex-generator.js"
+    ],
+    "styles": [ "styles/hex-generator.css" ],
+    "packs": [],
+    "url": "https://github.com/NeuroTR0PHY/Hex-Map-Generator",
+    "manifest": "https://github.com/NeuroTR0PHY/Hex-Map-Generator/raw/main/module.json",
+    "download": "https://github.com/NeuroTR0PHY/Hex-Map-Generator/archive/refs/tags/WIP.zip"
 }
