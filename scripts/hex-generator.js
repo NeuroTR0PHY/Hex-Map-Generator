@@ -87,6 +87,11 @@ Hooks.on('getSceneControlButtons', (controls) => {
                 title: "Clear Hex Map",
                 icon: "fas fa-trash",
             },
+            {
+                name: "generateColorMap",
+                title: "Generate Color Map",
+                icon: "fas fa-paint-brush",
+            },
         ],
         activeTool: "generate"
     });
@@ -118,6 +123,11 @@ Hooks.on('renderSceneControls', (app, html, data) => {
     html.find('.control-tool[data-tool="clear"]').click(ev => {
         console.log('Clear Hex Map clicked');
         clearHexMap();
+    });
+
+    html.find('.control-tool[data-tool="generateColorMap"]').click(ev => {
+        console.log('Generate Color Map clicked');
+        showGenerateNoiseDialog();
     });
 });
 
@@ -369,8 +379,8 @@ async function generateHexMap(html) {
     console.log("Filtered images:", filteredImages);
 
     const gridSize = hexSize;
-    const rows = Math.ceil(height / (gridSize * 1.5));
-    const cols = Math.ceil(width / (gridSize * Math.sqrt(3)));
+    const rows = Math.ceil(height / (gridSize * 1.5)) + 1; // Ensure coverage
+    const cols = Math.ceil(width / (gridSize * Math.sqrt(3))) + 1; // Ensure coverage
 
     let placedTiles = [];
     placedTileIds = []; // Reset placedTileIds
@@ -380,17 +390,25 @@ async function generateHexMap(html) {
             const x = col * gridSize * Math.sqrt(3) + (row % 2) * (gridSize * Math.sqrt(3) / 2);
             const y = row * gridSize * 1.5;
 
-            placedTiles.push({
-                x: x,
-                y: y,
-                width: gridSize * 2,
-                height: gridSize * 2,
-                rotation: 0,
-                z: 0,
-                flags: { isHexTile: true }
-            });
+            // Debug output
+            console.log(`Placing tile at (${x}, ${y})`);
+
+            // Check if x and y are within bounds
+            if (x < width && y < height) {
+                placedTiles.push({
+                    x: x,
+                    y: y,
+                    width: gridSize,
+                    height: gridSize,
+                    rotation: 0,
+                    z: 0,
+                    flags: { isHexTile: true }
+                });
+            }
         }
     }
+
+    console.log('Total tiles to place:', placedTiles.length);
 
     let createdTiles = await canvas.scene.createEmbeddedDocuments("Tile", placedTiles);
     placedTileIds = createdTiles.map(tile => tile.id);
@@ -407,8 +425,8 @@ async function generateHexMap(html) {
             _id: tile.id,
             texture: {
                 src: texturePath,
-                scaleX: 1,
-                scaleY: 1,
+                scaleX: 4,
+                scaleY: 4,
                 offsetX: 0,
                 offsetY: 0
             }
@@ -423,6 +441,7 @@ async function generateHexMap(html) {
         console.error("Error updating tile textures:", error);
     }
 }
+
 
 
 async function fetchTileImages(folderPath) {
@@ -450,4 +469,140 @@ function clearHexMap() {
     } else {
         ui.notifications.info("No tiles to clear.");
     }
+}
+
+
+async function showGenerateNoiseDialog() {
+    const content = `
+        <p>Enter a seed value for noise generation:</p><input type="number" id="seed-input" style="width: 100%;" />
+    `;
+    new Dialog({
+        title: "Generate and Apply Noise",
+        content: content,
+        buttons: {
+            generate: {
+                label: "Apply Noise",
+                callback: (html) => {
+                    const seed = parseInt(html.find("#seed-input").val(), 10);
+                    if (isNaN(seed)) {
+                        ui.notifications.error("Invalid seed value.");
+                        return;
+                    }
+                    generateAndApplyNoiseToBackground(seed);
+                }
+            },
+            cancel: {
+                label: "Cancel"
+            }
+        },
+        default: "generate"
+    }).render(true);
+}
+
+// Function to generate and apply Perlin noise background
+async function generateAndApplyNoiseToBackground(seed) {
+    console.log("Function called");
+
+    // Ensure canvas and scene are available
+    if (!canvas || !canvas.scene) {
+        console.error("Canvas or scene is not available.");
+        return;
+    }
+
+    const scene = canvas.scene;
+    console.log("Scene object:", scene);
+
+    // Path to the image in the module folder
+    const imagePath = 'modules/procedural-hex-maps/MapTemplate.png';
+
+    // Create a canvas for the noise generation
+    const canvasEl = document.createElement('canvas');
+    const ctx = canvasEl.getContext('2d');
+    const width = canvasEl.width = 4000; // Adjust to your needs
+    const height = canvasEl.height = 3000; // Adjust to your needs
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous'; // For CORS issues
+    img.src = imagePath;
+    img.onload = () => {
+        ctx.drawImage(img, 0, 0, width, height);
+        console.log("Background image drawn");
+
+        applyNoiseToImage(ctx, width, height, seed);
+
+        const texturePath = canvasEl.toDataURL('image/png');
+        console.log("Texture path:", texturePath);
+
+        // Update the scene with the new background image
+        scene.update({ 'background.src': texturePath }).then(() => {
+            console.log("Scene updated with new background");
+            ui.notifications.info('Noise applied to background image.');
+        }).catch((error) => {
+            console.error("Error updating scene:", error);
+            ui.notifications.error("Error updating scene.");
+        });
+    };
+
+    img.onerror = (error) => {
+        console.error("Error loading background image:", error);
+        ui.notifications.error("Error loading background image.");
+    };
+}
+
+function applyNoiseToImage(ctx, width, height, seed) {
+    console.log("Applying noise to image");
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    const random = new SeededRandom(seed);
+    const p = initPermutationArray(random);
+
+    // Define the colors
+    const colorDirtBrown = { r: 139, g: 69, b: 19 }; // Dirt brown
+    const colorYellowGrass = { r: 255, g: 255, b: 102 }; // Yellow dry grass
+    const colorGreenGrass = { r: 34, g: 139, b: 34 }; // Verdant green grass
+
+    // Paint every pixel dirt brown
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const index = (y * width + x) * 4;
+            data[index] = colorDirtBrown.r;     // Red
+            data[index + 1] = colorDirtBrown.g; // Green
+            data[index + 2] = colorDirtBrown.b; // Blue
+            data[index + 3] = 255; // Fully opaque
+        }
+    }
+
+    // Overlay grass colors based on noise values with smoothing
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const noiseValue = noise(x * 0.02, y * 0.02, random, p); // Adjust scale as needed
+            const smoothNoiseValue = smoothNoise(noiseValue); // Apply smoothing
+
+            if (smoothNoiseValue > 0.40) { // Threshold for noise to apply grass color
+                const r = Math.round(lerp(colorYellowGrass.r, colorGreenGrass.r, (smoothNoiseValue - 0.40) / 0.60));
+                const g = Math.round(lerp(colorYellowGrass.g, colorGreenGrass.g, (smoothNoiseValue - 0.40) / 0.60));
+                const b = Math.round(lerp(colorYellowGrass.b, colorGreenGrass.b, (smoothNoiseValue - 0.40) / 0.60));
+
+                const index = (y * width + x) * 4;
+                data[index] = r;     // Red
+                data[index + 1] = g; // Green
+                data[index + 2] = b; // Blue
+                data[index + 3] = 255; // Fully opaque
+            }
+        }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    console.log("Noise applied to image");
+}
+
+function smoothNoise(value) {
+    // Example: Smooth the noise using a quadratic function
+    return Math.pow(value, 2); // Adjust the exponent for different levels of smoothing
+}
+
+// Linear interpolation function
+function lerp(start, end, t) {
+    return start + t * (end - start);
 }
