@@ -1,7 +1,4 @@
-﻿// Array to keep track of placed tile IDs
-let placedTileIds = [];
-
-// Simple seed-based random number generator
+﻿// Simple seed-based random number generator
 class SeededRandom {
     constructor(seed) {
         this.seed = seed;
@@ -20,7 +17,7 @@ class SeededRandom {
 }
 
 // Perlin noise function with seeded random
-function noise(x, y, random) {
+function noise(x, y, random, p) {
     const X = Math.floor(x) & 255;
     const Y = Math.floor(y) & 255;
     x -= Math.floor(x);
@@ -34,14 +31,28 @@ function noise(x, y, random) {
 
 function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
 function lerp(t, a, b) { return a + t * (b - a); }
+
 function grad(hash, x, y, random) {
     const h = hash & 15;
     const grad = 1 + (h & 7);
     return ((h & 8) ? -grad : grad) * x + ((h & 4) ? -grad : grad) * y;
 }
 
-const p = new Array(512);
-for (let i = 0; i < 256; i++) p[i] = p[i + 256] = Math.floor(Math.random() * 256);
+function initPermutationArray(random) {
+    const p = new Array(512);
+    const perm = Array.from({ length: 256 }, (_, i) => i);
+
+    // Shuffle perm array with seeded random
+    for (let i = perm.length - 1; i > 0; i--) {
+        const j = Math.floor(random.random() * (i + 1));
+        [perm[i], perm[j]] = [perm[j], perm[i]];
+    }
+
+    for (let i = 0; i < 256; i++) {
+        p[i] = p[i + 256] = perm[i];
+    }
+    return p;
+}
 
 Hooks.on('getSceneControlButtons', (controls) => {
     console.log('Adding Hex Map Generator button');
@@ -106,85 +117,40 @@ Hooks.on('renderSceneControls', (app, html, data) => {
 
     html.find('.control-tool[data-tool="clear"]').click(ev => {
         console.log('Clear Hex Map clicked');
-        clearHexMap(); // Call the clear function
+        // Add your hex map clearing logic here
     });
 });
 
-async function generateHexMap(html) {
-    // ... (previous code remains the same)
-
-    const tileFolder = "modules/procedural-hex-maps/tiles";
-    const tileImages = await fetchTileImages(tileFolder);
-    console.log("Tile images fetched:", tileImages);
-    if (tileImages.length === 0) {
-        ui.notifications.warn("No tiles found in the specified directory.");
-        return;
-    }
-
-    // Generate hex map and place tiles
-    const gridSize = canvas.scene.grid.size * 2;
-    const rows = Math.ceil(canvas.dimensions.height / gridSize);
-    const cols = Math.ceil(canvas.dimensions.width / gridSize);
-    console.log(`Generating hex map for ${rows} rows and ${cols} columns`);
-
-    let tilePromises = [];
-    placedTileIds = []; // Reset placedTileIds
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            const x = col * gridSize + gridSize / 2;
-            const y = row * gridSize + gridSize / 2;
-            const tileImage = tileImages[Math.floor(Math.random() * tileImages.length)];
-
-            if (!tileImage) {
-                console.warn("Selected tile image is empty.");
-                continue;
+async function showHexMapDialog() {
+    const content = await renderTemplate("modules/procedural-hex-maps/templates/template.html", {});
+    new Dialog({
+        title: "Generate Hex Map",
+        content: content,
+        buttons: {
+            generate: {
+                icon: '<i class="fas fa-magic"></i>',
+                label: "Generate",
+                callback: (html) => generateHexMap(html)
+            },
+            cancel: {
+                icon: '<i class="fas fa-times"></i>',
+                label: "Cancel"
             }
-
-            // Use Foundry's built-in methods to resolve the file path
-            const imgPath = await FilePicker.browse("data", `${tileFolder}/${tileImage}`).then(result => result.path);
-            console.log(`Placing tile at ${x}, ${y} with image ${imgPath}`);
-
-            tilePromises.push(
-                canvas.scene.createEmbeddedDocuments("Tile", [{
-                    img: imgPath,
-                    x: x,
-                    y: y,
-                    width: gridSize,
-                    height: gridSize,
-                    rotation: 0,
-                    z: 0,
-                    flags: { isHexTile: true }
-                }])
-                    .then(tiles => {
-                        placedTileIds.push(...tiles.map(tile => tile.id));
-                    })
-                    .catch(error => {
-                        console.error(`Error creating tile with image ${imgPath}:`, error);
-                    })
-            );
-        }
-    }
-
-    // Wait for all tiles to be placed
-    Promise.all(tilePromises)
-        .then(() => {
-            console.log('All tiles placed');
-            ui.notifications.info("Hex map generated with tiles.");
-        })
-        .catch(error => {
-            console.error("Error generating hex map:", error);
-        });
+        },
+        default: "generate",
+        render: html => console.log("Register interactivity in the rendered dialog"),
+        close: html => console.log("This always is logged no matter which option is chosen")
+    }).render(true);
 }
 
-async function fetchTileImages(folderPath) {
-    try {
-        // Use Foundry's FilePicker to get the list of files
-        const browseResult = await FilePicker.browse("data", folderPath);
-        return browseResult.files.filter(file => file.endsWith('.png')).map(file => file.split('/').pop());
-    } catch (error) {
-        console.error("Error fetching tile images:", error);
-        return [];
-    }
+function generateHexMap(html) {
+    const width = html.find('input[name="map-width"]').val();
+    const height = html.find('input[name="map-height"]').val();
+    const hexSize = html.find('input[name="hex-size"]').val();
+    const terrainType = html.find('select[name="terrain-type"]').val();
+
+    console.log(`Generating hex map: ${width}x${height}, hex size: ${hexSize}, terrain: ${terrainType}`);
+    // Add your hex map generation logic here
 }
 
 function generateFog() {
@@ -197,7 +163,8 @@ function generateFog() {
                 callback: (html) => {
                     const seed = parseInt(html.find("#seed-value").val(), 10);
                     const random = new SeededRandom(seed);
-                    applyFogGeneration(random);
+                    const p = initPermutationArray(random); // Initialize permutation array with seed
+                    applyFogGeneration(random, p);
                 }
             },
             cancel: {
@@ -208,16 +175,22 @@ function generateFog() {
     }).render(true);
 }
 
-function applyFogGeneration(random) {
+function applyFogGeneration(random, p) {
     const scene = canvas.scene;
     const fogColor = 0xCCCCCC; // Fog gray color
     const fogOpacity = 0.5; // Adjust as needed
-    const noiseScale = 0.1; // Scale of noise
-    const threshold = 0.5; // Threshold for fog density
-    const templateSize = canvas.dimensions.size;
+    const templateSize = 7; // Size in feet
+    const noiseScale = 0.1;
+    const threshold = 0.95; // Adjust to control fog density
+    console.log("Starting fog generation script");
 
-    // Remove existing fog templates
-    removeFog();
+    // Check if fog exists and remove it if it does
+    const existingFog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
+    if (existingFog.length > 0) {
+        console.log(`Removing ${existingFog.length} fog templates`);
+        canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", existingFog.map(f => f.id));
+        ui.notifications.info("Existing fog removed");
+    }
 
     // Generate new fog
     const gridSize = scene.grid.size * 2;
@@ -227,100 +200,148 @@ function applyFogGeneration(random) {
     let fogTemplates = [];
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
-            const noiseValue = noise(col * noiseScale, row * noiseScale, random);
+            const noiseValue = noise(col * noiseScale, row * noiseScale, random, p);
             if (noiseValue > threshold) {
                 const x = col * gridSize + gridSize / 2;
                 const y = row * gridSize + gridSize / 2;
+
                 fogTemplates.push({
-                    t: "template",
+                    t: "circle",
+                    user: game.user.id,
                     x: x,
                     y: y,
-                    width: templateSize,
-                    height: templateSize,
+                    direction: 0,
+                    distance: templateSize,
+                    borderColor: fogColor,
                     fillColor: fogColor,
                     fillAlpha: fogOpacity,
-                    angle: 0,
+                    texture: "",
+                    hidden: false,
                     flags: { isFog: true }
                 });
-                console.log(`Adding fog template at ${x}, ${y}`);
             }
         }
     }
-
-    // Create fog templates
     canvas.scene.createEmbeddedDocuments("MeasuredTemplate", fogTemplates)
-        .then(() => ui.notifications.info("Fog generated"))
-        .catch(error => console.error("Error generating fog:", error));
+        .then(createdFog => {
+            console.log(`Created ${createdFog.length} fog templates`);
+            canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
+            ui.notifications.info("Fog generated");
+        })
+        .catch(error => {
+            console.error("Error creating fog:", error);
+        });
 }
 
 async function showShiftFogDialog() {
-    const content = await renderTemplate("modules/procedural-hex-maps/templates/shift-fog-dialog.html", {});
+    const content = `
+        <p>Enter the number of times to shift the fog:</p><input type="number" id="shift-count" value="1" min="1" style="width: 100%;"/>
+        <p>Select wind direction:</p>
+        <select id="wind-direction" style="width: 100%;">
+            <option value="N">North</option>
+            <option value="NE">North-East</option>
+            <option value="E">East</option>
+            <option value="SE">South-East</option>
+            <option value="S">South</option>
+            <option value="SW">South-West</option>
+            <option value="W">West</option>
+            <option value="NW">North-West</option>
+        </select>
+        <p>Set wind intensity (e.g., 1, 2, 3):</p><input type="number" id="wind-intensity" value="1" min="0" step="0.1" style="width: 100%;"/>
+    `;
     new Dialog({
         title: "Shift Fog",
         content: content,
         buttons: {
             shift: {
-                icon: '<i class="fas fa-wind"></i>',
                 label: "Shift Fog",
-                callback: (html) => shiftFog(html)
+                callback: (html) => {
+                    const shiftCount = parseInt(html.find("#shift-count").val(), 10);
+                    const windDirection = html.find("#wind-direction").val();
+                    const windIntensity = parseFloat(html.find("#wind-intensity").val());
+
+                    shiftFog(shiftCount, windDirection, windIntensity);
+                }
             },
             cancel: {
-                icon: '<i class="fas fa-times"></i>',
                 label: "Cancel"
             }
         },
-        default: "shift",
-        render: html => console.log("Dialog rendered for shifting fog"),
-        close: html => console.log("Dialog closed for shifting fog")
+        default: "shift"
     }).render(true);
 }
 
-function shiftFog(html) {
-    const direction = html.find('select[name="direction"]').val();
-    const distance = parseInt(html.find('input[name="distance"]').val(), 10);
-    const shiftX = distance * Math.cos(direction * Math.PI / 180);
-    const shiftY = distance * Math.sin(direction * Math.PI / 180);
-    const fogTemplates = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
-
-    if (fogTemplates.length === 0) {
-        ui.notifications.warn("No fog templates found.");
+// Function to shift fog based on wind direction and intensity
+function shiftFog(shiftCount, windDirection, windIntensity) {
+    const fog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
+    if (fog.length === 0) {
+        ui.notifications.warn("No fog to shift");
         return;
     }
 
-    const updates = fogTemplates.map(t => ({
-        _id: t.id,
-        x: t.data.x + shiftX,
-        y: t.data.y + shiftY
-    }));
+    const directions = {
+        N: { dx: 0, dy: -1 },
+        NE: { dx: 1, dy: -1 },
+        E: { dx: 1, dy: 0 },
+        SE: { dx: 1, dy: 1 },
+        S: { dx: 0, dy: 1 },
+        SW: { dx: -1, dy: 1 },
+        W: { dx: -1, dy: 0 },
+        NW: { dx: -1, dy: -1 }
+    };
 
-    canvas.scene.updateEmbeddedDocuments("MeasuredTemplate", updates)
-        .then(() => ui.notifications.info("Fog shifted"))
-        .catch(error => console.error("Error shifting fog:", error));
+    const { dx, dy } = directions[windDirection] || { dx: 0, dy: 0 };
+    const gridSize = canvas.scene.grid.size;
+    const shiftDistance = gridSize * windIntensity * shiftCount;
+
+    fog.forEach(template => {
+        const data = template.document; // Use document directly
+
+        // Check if template has valid x and y properties
+        if (data.x == null || data.y == null) {
+            console.error("Template data missing x or y:", template);
+            return;
+        }
+
+        // Calculate new positions with wind influence
+        let newX = data.x + dx * shiftDistance;
+        let newY = data.y + dy * shiftDistance;
+
+        // Add random movement
+        newX += (Math.random() - 0.5) * gridSize;
+        newY += (Math.random() - 0.5) * gridSize;
+
+        // Ensure fog templates don't get closer than 1 tile to each other
+        fog.forEach(otherTemplate => {
+            if (template !== otherTemplate) {
+                const distance = Math.sqrt(Math.pow(newX - otherTemplate.document.x, 2) + Math.pow(newY - otherTemplate.document.y, 2));
+                if (distance < gridSize) {
+                    newX += Math.sign(newX - otherTemplate.document.x) * gridSize;
+                    newY += Math.sign(newY - otherTemplate.document.y) * gridSize;
+                }
+            }
+        });
+
+        // Update template position
+        template.document.update({ x: newX, y: newY });
+    });
+
+    canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
+    ui.notifications.info(`Fog shifted ${shiftCount} times to the ${windDirection}`);
 }
 
 function removeFog() {
-    const fogTemplates = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
-    if (fogTemplates.length === 0) {
-        ui.notifications.warn("No fog templates found.");
-        return;
-    }
-
-    canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", fogTemplates.map(f => f.id))
-        .then(() => ui.notifications.info("Fog removed"))
-        .catch(error => console.error("Error removing fog:", error));
-}
-
-function clearHexMap() {
-    console.log('Clearing Hex Map');
-    if (placedTileIds.length > 0) {
-        //console.log('Placed tile IDs:', placedTileIds); // Debugging log
-        canvas.scene.deleteEmbeddedDocuments("Tile", placedTileIds)
+    const fog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
+    if (fog.length > 0) {
+        canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", fog.map(f => f.id))
             .then(() => {
-                placedTileIds = []; // Clear the array after successful deletion
-                ui.notifications.info("Hex map cleared.");
+                ui.notifications.info("Fog removed");
+                canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
             })
-            .catch(error => console.error("Error clearing hex map:", error));
+            .catch(error => {
+                console.error("Error removing fog:", error);
+            });
     } else {
-        ui.notifications.info("No tiles to clear.");
+        ui.notifications.warn("No fog to remove");
     }
 }
