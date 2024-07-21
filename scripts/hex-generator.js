@@ -350,10 +350,10 @@ function removeFog() {
 let placedTileIds = [];
 
 async function generateHexMap(html) {
-    const width = parseInt(html.find('input[name="map-width"]').val());
-    const height = parseInt(html.find('input[name="map-height"]').val());
-    const hexSize = parseInt(html.find('input[name="hex-size"]').val());
-    const terrainType = html.find('select[name="terrain-type"]').val();
+    const width = canvas.dimensions.width;
+    const height = canvas.dimensions.height;
+    const hexSize = parseInt(html.find('input[name="hex-size"]').val()) || canvas.grid.size;
+    const terrainType = html.find('select[name="terrain-type"]').val() || 'mixed';
 
     console.log(`Generating hex map: ${width}x${height}, hex size: ${hexSize}, terrain: ${terrainType}`);
 
@@ -365,58 +365,65 @@ async function generateHexMap(html) {
         return;
     }
 
-    const gridSize = canvas.scene.grid.size;
-    const rows = Math.ceil(canvas.dimensions.height / (gridSize * 1.5));
-    const cols = Math.ceil(canvas.dimensions.width / (gridSize * Math.sqrt(3)));
+    const filteredImages = terrainType === 'mixed' ? tileImages : tileImages.filter(img => img.toLowerCase().includes(terrainType.toLowerCase()));
+    console.log("Filtered images:", filteredImages);
 
-    let tilePromises = [];
+    const gridSize = hexSize;
+    const rows = Math.ceil(height / (gridSize * 1.5));
+    const cols = Math.ceil(width / (gridSize * Math.sqrt(3)));
+
+    let placedTiles = [];
     placedTileIds = []; // Reset placedTileIds
 
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
             const x = col * gridSize * Math.sqrt(3) + (row % 2) * (gridSize * Math.sqrt(3) / 2);
             const y = row * gridSize * 1.5;
-            const tileImage = tileImages[Math.floor(Math.random() * tileImages.length)];
 
-            if (!tileImage) {
-                console.warn("Selected tile image is empty.");
-                continue;
-            }
-
-            const imgPath = `${tileFolder}/${tileImage}`;
-            console.log(`Placing tile at ${x}, ${y} with image ${imgPath}`);
-
-            tilePromises.push(
-                canvas.scene.createEmbeddedDocuments("Tile", [{
-                    img: imgPath,
-                    x: x,
-                    y: y,
-                    width: gridSize * 2,
-                    height: gridSize * 2,
-                    rotation: 0,
-                    z: 0,
-                    flags: { isHexTile: true }
-                }])
-                    .then(tiles => {
-                        placedTileIds.push(...tiles.map(tile => tile.id));
-                    })
-                    .catch(error => {
-                        console.error(`Error creating tile with image ${imgPath}:`, error);
-                    })
-            );
+            placedTiles.push({
+                x: x,
+                y: y,
+                width: gridSize * 2,
+                height: gridSize * 2,
+                rotation: 0,
+                z: 0,
+                flags: { isHexTile: true }
+            });
         }
     }
 
-    // Wait for all tiles to be placed
-    Promise.all(tilePromises)
-        .then(() => {
-            console.log('All tiles placed');
-            ui.notifications.info("Hex map generated with tiles.");
-        })
-        .catch(error => {
-            console.error("Error generating hex map:", error);
-        });
+    let createdTiles = await canvas.scene.createEmbeddedDocuments("Tile", placedTiles);
+    placedTileIds = createdTiles.map(tile => tile.id);
+    console.log('Created tiles:', createdTiles);
+
+    let updateData = createdTiles.map(tile => {
+        const tileImage = filteredImages[Math.floor(Math.random() * filteredImages.length)];
+        const texturePath = `${tileFolder}/${tileImage}`;
+
+        console.log(`Tile ID: ${tile.id}`);
+        console.log(`Tile Document:`, tile);
+
+        return {
+            _id: tile.id,
+            texture: {
+                src: texturePath,
+                scaleX: 1,
+                scaleY: 1,
+                offsetX: 0,
+                offsetY: 0
+            }
+        };
+    });
+
+    try {
+        console.log('Update data before applying:', updateData);
+        await canvas.scene.updateEmbeddedDocuments("Tile", updateData);
+        console.log('All tiles placed and images assigned');
+    } catch (error) {
+        console.error("Error updating tile textures:", error);
+    }
 }
+
 
 async function fetchTileImages(folderPath) {
     try {
@@ -429,6 +436,7 @@ async function fetchTileImages(folderPath) {
         return [];
     }
 }
+
 
 function clearHexMap() {
     console.log('Clearing Hex Map');
