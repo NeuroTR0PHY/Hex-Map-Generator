@@ -117,7 +117,7 @@ Hooks.on('renderSceneControls', (app, html, data) => {
 
     html.find('.control-tool[data-tool="clear"]').click(ev => {
         console.log('Clear Hex Map clicked');
-        // Add your hex map clearing logic here
+        clearHexMap();
     });
 });
 
@@ -343,5 +343,103 @@ function removeFog() {
             });
     } else {
         ui.notifications.warn("No fog to remove");
+    }
+}
+
+// Array to keep track of placed tile IDs
+let placedTileIds = [];
+
+async function generateHexMap(html) {
+    const width = parseInt(html.find('input[name="map-width"]').val());
+    const height = parseInt(html.find('input[name="map-height"]').val());
+    const hexSize = parseInt(html.find('input[name="hex-size"]').val());
+    const terrainType = html.find('select[name="terrain-type"]').val();
+
+    console.log(`Generating hex map: ${width}x${height}, hex size: ${hexSize}, terrain: ${terrainType}`);
+
+    const tileFolder = "modules/procedural-hex-maps/tiles";
+    const tileImages = await fetchTileImages(tileFolder);
+    console.log("Tile images fetched:", tileImages);
+    if (tileImages.length === 0) {
+        ui.notifications.warn("No tiles found in the specified directory.");
+        return;
+    }
+
+    const gridSize = canvas.scene.grid.size;
+    const rows = Math.ceil(canvas.dimensions.height / (gridSize * 1.5));
+    const cols = Math.ceil(canvas.dimensions.width / (gridSize * Math.sqrt(3)));
+
+    let tilePromises = [];
+    placedTileIds = []; // Reset placedTileIds
+
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const x = col * gridSize * Math.sqrt(3) + (row % 2) * (gridSize * Math.sqrt(3) / 2);
+            const y = row * gridSize * 1.5;
+            const tileImage = tileImages[Math.floor(Math.random() * tileImages.length)];
+
+            if (!tileImage) {
+                console.warn("Selected tile image is empty.");
+                continue;
+            }
+
+            const imgPath = `${tileFolder}/${tileImage}`;
+            console.log(`Placing tile at ${x}, ${y} with image ${imgPath}`);
+
+            tilePromises.push(
+                canvas.scene.createEmbeddedDocuments("Tile", [{
+                    img: imgPath,
+                    x: x,
+                    y: y,
+                    width: gridSize * 2,
+                    height: gridSize * 2,
+                    rotation: 0,
+                    z: 0,
+                    flags: { isHexTile: true }
+                }])
+                    .then(tiles => {
+                        placedTileIds.push(...tiles.map(tile => tile.id));
+                    })
+                    .catch(error => {
+                        console.error(`Error creating tile with image ${imgPath}:`, error);
+                    })
+            );
+        }
+    }
+
+    // Wait for all tiles to be placed
+    Promise.all(tilePromises)
+        .then(() => {
+            console.log('All tiles placed');
+            ui.notifications.info("Hex map generated with tiles.");
+        })
+        .catch(error => {
+            console.error("Error generating hex map:", error);
+        });
+}
+
+async function fetchTileImages(folderPath) {
+    try {
+        const response = await fetch(`${folderPath}/images.json`);
+        if (!response.ok) throw new Error("Network response was not ok");
+        const data = await response.json();
+        return data.tiles || [];
+    } catch (error) {
+        console.error("Error fetching tile images:", error);
+        return [];
+    }
+}
+
+function clearHexMap() {
+    console.log('Clearing Hex Map');
+    if (placedTileIds.length > 0) {
+        canvas.scene.deleteEmbeddedDocuments("Tile", placedTileIds)
+            .then(() => {
+                placedTileIds = []; // Clear the array after successful deletion
+                ui.notifications.info("Hex map cleared.");
+            })
+            .catch(error => console.error("Error clearing hex map:", error));
+    } else {
+        ui.notifications.info("No tiles to clear.");
     }
 }
