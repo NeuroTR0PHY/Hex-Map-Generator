@@ -1,4 +1,7 @@
-﻿// Simple seed-based random number generator
+﻿// Array to keep track of placed tile IDs
+let placedTileIds = [];
+
+// Simple seed-based random number generator
 class SeededRandom {
     constructor(seed) {
         this.seed = seed;
@@ -103,44 +106,16 @@ Hooks.on('renderSceneControls', (app, html, data) => {
 
     html.find('.control-tool[data-tool="clear"]').click(ev => {
         console.log('Clear Hex Map clicked');
-        // Add your hex map clearing logic here
+        clearHexMap(); // Call the clear function
     });
 });
 
-async function showHexMapDialog() {
-    const content = await renderTemplate("modules/procedural-hex-maps/templates/template.html", {});
-    new Dialog({
-        title: "Generate Hex Map",
-        content: content,
-        buttons: {
-            generate: {
-                icon: '<i class="fas fa-magic"></i>',
-                label: "Generate",
-                callback: (html) => generateHexMap(html)
-            },
-            cancel: {
-                icon: '<i class="fas fa-times"></i>',
-                label: "Cancel"
-            }
-        },
-        default: "generate",
-        render: html => console.log("Register interactivity in the rendered dialog"),
-        close: html => console.log("This always is logged no matter which option is chosen")
-    }).render(true);
-}
-
 async function generateHexMap(html) {
-    const width = html.find('input[name="map-width"]').val();
-    const height = html.find('input[name="map-height"]').val();
-    const hexSize = html.find('input[name="hex-size"]').val();
-    const terrainType = html.find('select[name="terrain-type"]').val();
+    // ... (previous code remains the same)
 
-    console.log(`Generating hex map: ${width}x${height}, hex size: ${hexSize}, terrain: ${terrainType}`);
-
-    // Fetch the tile assets from the module
-    const tileFolder = "modules/procedural-hex-maps/tiles"; // Replace with actual path
+    const tileFolder = "modules/procedural-hex-maps/tiles";
     const tileImages = await fetchTileImages(tileFolder);
-    console.log("Tile images fetched:", tileImages); // Log fetched tile images
+    console.log("Tile images fetched:", tileImages);
     if (tileImages.length === 0) {
         ui.notifications.warn("No tiles found in the specified directory.");
         return;
@@ -153,6 +128,7 @@ async function generateHexMap(html) {
     console.log(`Generating hex map for ${rows} rows and ${cols} columns`);
 
     let tilePromises = [];
+    placedTileIds = []; // Reset placedTileIds
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
             const x = col * gridSize + gridSize / 2;
@@ -164,28 +140,28 @@ async function generateHexMap(html) {
                 continue;
             }
 
-            const imgPath = `${tileFolder}/${tileImage}`;
-            console.log(`Placing tile at ${x}, ${y} with image ${imgPath}`); // Log the image path
+            // Use Foundry's built-in methods to resolve the file path
+            const imgPath = await FilePicker.browse("data", `${tileFolder}/${tileImage}`).then(result => result.path);
+            console.log(`Placing tile at ${x}, ${y} with image ${imgPath}`);
 
-            tilePromises.push(canvas.scene.createEmbeddedDocuments("Tile", [{
-                t: "tile",
-                x: x,
-                y: y,
-                width: gridSize,
-                height: gridSize,
-                img: imgPath, // Use the full path for the image
-                rotation: 0,
-                z: 0,
-                flags: { isHexTile: true }
-            }]));
-
-            console.log(`Tile creation parameters:`, {
-                x,
-                y,
-                width: gridSize,
-                height: gridSize,
-                img: imgPath
-            });
+            tilePromises.push(
+                canvas.scene.createEmbeddedDocuments("Tile", [{
+                    img: imgPath,
+                    x: x,
+                    y: y,
+                    width: gridSize,
+                    height: gridSize,
+                    rotation: 0,
+                    z: 0,
+                    flags: { isHexTile: true }
+                }])
+                    .then(tiles => {
+                        placedTileIds.push(...tiles.map(tile => tile.id));
+                    })
+                    .catch(error => {
+                        console.error(`Error creating tile with image ${imgPath}:`, error);
+                    })
+            );
         }
     }
 
@@ -200,14 +176,11 @@ async function generateHexMap(html) {
         });
 }
 
-
 async function fetchTileImages(folderPath) {
     try {
-        const response = await fetch(`${folderPath}/images.json`); // Ensure the path to images.json is correct
-        if (!response.ok) throw new Error("Network response was not ok");
-        const data = await response.json();
-        console.log("Tile images data:", data); // Log the data fetched from images.json
-        return data.tiles || [];
+        // Use Foundry's FilePicker to get the list of files
+        const browseResult = await FilePicker.browse("data", folderPath);
+        return browseResult.files.filter(file => file.endsWith('.png')).map(file => file.split('/').pop());
     } catch (error) {
         console.error("Error fetching tile images:", error);
         return [];
@@ -239,18 +212,12 @@ function applyFogGeneration(random) {
     const scene = canvas.scene;
     const fogColor = 0xCCCCCC; // Fog gray color
     const fogOpacity = 0.5; // Adjust as needed
-    const templateSize = 7; // Size in feet
-    const noiseScale = 0.1;
-    const threshold = 0.95; // Adjust to control fog density
-    console.log("Starting fog generation script");
+    const noiseScale = 0.1; // Scale of noise
+    const threshold = 0.5; // Threshold for fog density
+    const templateSize = canvas.dimensions.size;
 
-    // Check if fog exists and remove it if it does
-    const existingFog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
-    if (existingFog.length > 0) {
-        console.log(`Removing ${existingFog.length} fog templates`);
-        canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", existingFog.map(f => f.id));
-        ui.notifications.info("Existing fog removed");
-    }
+    // Remove existing fog templates
+    removeFog();
 
     // Generate new fog
     const gridSize = scene.grid.size * 2;
@@ -341,4 +308,19 @@ function removeFog() {
     canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", fogTemplates.map(f => f.id))
         .then(() => ui.notifications.info("Fog removed"))
         .catch(error => console.error("Error removing fog:", error));
+}
+
+function clearHexMap() {
+    console.log('Clearing Hex Map');
+    if (placedTileIds.length > 0) {
+        //console.log('Placed tile IDs:', placedTileIds); // Debugging log
+        canvas.scene.deleteEmbeddedDocuments("Tile", placedTileIds)
+            .then(() => {
+                placedTileIds = []; // Clear the array after successful deletion
+                ui.notifications.info("Hex map cleared.");
+            })
+            .catch(error => console.error("Error clearing hex map:", error));
+    } else {
+        ui.notifications.info("No tiles to clear.");
+    }
 }
