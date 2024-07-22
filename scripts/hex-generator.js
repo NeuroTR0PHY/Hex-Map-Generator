@@ -499,44 +499,31 @@ async function showGenerateNoiseDialog() {
     }).render(true);
 }
 
-// Function to generate and apply Perlin noise background
 async function generateAndApplyNoiseToBackground(seed) {
-    console.log("Function called");
-
-    // Ensure canvas and scene are available
     if (!canvas || !canvas.scene) {
         console.error("Canvas or scene is not available.");
         return;
     }
 
     const scene = canvas.scene;
-    console.log("Scene object:", scene);
-
-    // Path to the image in the module folder
     const imagePath = 'modules/procedural-hex-maps/MapTemplate.png';
 
-    // Create a canvas for the noise generation
     const canvasEl = document.createElement('canvas');
     const ctx = canvasEl.getContext('2d');
-    const width = canvasEl.width = 4000; // Adjust to your needs
-    const height = canvasEl.height = 3000; // Adjust to your needs
+    const width = canvasEl.width = 4000;
+    const height = canvasEl.height = 3000;
 
     const img = new Image();
-    img.crossOrigin = 'anonymous'; // For CORS issues
+    img.crossOrigin = 'anonymous';
     img.src = imagePath;
     img.onload = () => {
         ctx.drawImage(img, 0, 0, width, height);
-        console.log("Background image drawn");
-
-        applyNoiseToImage(ctx, width, height, seed);
+        applyElevationNoiseToImage(ctx, width, height, seed);
 
         const texturePath = canvasEl.toDataURL('image/png');
-        console.log("Texture path:", texturePath);
 
-        // Update the scene with the new background image
         scene.update({ 'background.src': texturePath }).then(() => {
-            console.log("Scene updated with new background");
-            ui.notifications.info('Noise applied to background image.');
+            ui.notifications.info('Elevation noise applied to background image.');
         }).catch((error) => {
             console.error("Error updating scene:", error);
             ui.notifications.error("Error updating scene.");
@@ -549,60 +536,92 @@ async function generateAndApplyNoiseToBackground(seed) {
     };
 }
 
-function applyNoiseToImage(ctx, width, height, seed) {
-    console.log("Applying noise to image");
+function applyElevationNoiseToImage(ctx, width, height, seed) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
 
     const random = new SeededRandom(seed);
     const p = initPermutationArray(random);
 
-    // Define the colors
-    const colorDirtBrown = { r: 139, g: 69, b: 19 }; // Dirt brown
-    const colorYellowGrass = { r: 255, g: 255, b: 102 }; // Yellow dry grass
-    const colorGreenGrass = { r: 34, g: 139, b: 34 }; // Verdant green grass
+    const scale = 0.0005; // Adjust as needed
+    const noiseMatrix = [];
 
-    // Paint every pixel dirt brown
+    for (let y = 0; y < height; y++) {
+        const row = [];
+        for (let x = 0; x < width; x++) {
+            const elevation = noise(x * scale, y * scale, random, p);
+            row.push(elevation);
+            const index = (y * width + x) * 4;
+
+            const color = interpolateColor({ r: 50, g: 50, b: 50 }, { r: 255, g: 255, b: 255 }, elevation);
+
+            data[index] = color.r;
+            data[index + 1] = color.g;
+            data[index + 2] = color.b;
+            data[index + 3] = 255; // Fully opaque
+        }
+        noiseMatrix.push(row);
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    console.log("Elevation noise applied to image");
+    console.log("Noise Matrix:", noiseMatrix);
+
+    // Export noise matrix to an image
+    exportNoiseMatrixToImage(noiseMatrix, width, height);
+}
+
+function smoothNoise(value) {
+    // Simple smoothing function for noise values
+    return Math.max(0, Math.min(1, value)); // Clamp value between 0 and 1
+}
+
+function interpolateColor(color1, color2, t) {
+    // Interpolate between two colors
+    return {
+        r: Math.round(lerp(color1.r, color2.r, t)),
+        g: Math.round(lerp(color1.g, color2.g, t)),
+        b: Math.round(lerp(color1.b, color2.b, t))
+    };
+}
+
+function lerp(start, end, t) {
+    return start + t * (end - start);
+}
+
+function exportNoiseMatrixToImage(matrix, width, height) {
+    const canvasEl = document.createElement('canvas');
+    const ctx = canvasEl.getContext('2d');
+    canvasEl.width = width;
+    canvasEl.height = height;
+
+    const imageData = ctx.createImageData(width, height);
+    const data = imageData.data;
+
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
+            const value = matrix[y][x];
             const index = (y * width + x) * 4;
-            data[index] = colorDirtBrown.r;     // Red
-            data[index + 1] = colorDirtBrown.g; // Green
-            data[index + 2] = colorDirtBrown.b; // Blue
+
+            const color = Math.floor(value * 255);
+            data[index] = color;
+            data[index + 1] = color;
+            data[index + 2] = color;
             data[index + 3] = 255; // Fully opaque
         }
     }
 
-    // Overlay grass colors based on noise values with smoothing
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const noiseValue = noise(x * 0.02, y * 0.02, random, p); // Adjust scale as needed
-            const smoothNoiseValue = smoothNoise(noiseValue); // Apply smoothing
-
-            if (smoothNoiseValue > 0.40) { // Threshold for noise to apply grass color
-                const r = Math.round(lerp(colorYellowGrass.r, colorGreenGrass.r, (smoothNoiseValue - 0.40) / 0.60));
-                const g = Math.round(lerp(colorYellowGrass.g, colorGreenGrass.g, (smoothNoiseValue - 0.40) / 0.60));
-                const b = Math.round(lerp(colorYellowGrass.b, colorGreenGrass.b, (smoothNoiseValue - 0.40) / 0.60));
-
-                const index = (y * width + x) * 4;
-                data[index] = r;     // Red
-                data[index + 1] = g; // Green
-                data[index + 2] = b; // Blue
-                data[index + 3] = 255; // Fully opaque
-            }
-        }
-    }
-
     ctx.putImageData(imageData, 0, 0);
-    console.log("Noise applied to image");
-}
 
-function smoothNoise(value) {
-    // Example: Smooth the noise using a quadratic function
-    return Math.pow(value, 2); // Adjust the exponent for different levels of smoothing
-}
+    // Convert to base64
+    const base64Image = canvasEl.toDataURL('image/png');
 
-// Linear interpolation function
-function lerp(start, end, t) {
-    return start + t * (end - start);
+    // Create a download link
+    const link = document.createElement('a');
+    link.href = base64Image;
+    link.download = 'noise_image.png';
+    link.textContent = 'Download Noise Image';
+
+    // Append the link to the body for user interaction
+    document.body.appendChild(link);
 }
