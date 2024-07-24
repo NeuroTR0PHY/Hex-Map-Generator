@@ -1,5 +1,4 @@
-﻿
-//Button controls
+﻿//Button controls
 Hooks.on('getSceneControlButtons', (controls) => {
     console.log('Adding Hex Map Generator button');
     controls.push({
@@ -211,7 +210,6 @@ function clearHexMap() {
     }
 }
 
-
 //Fog generator functions
 function generateFog() {
     new Dialog({
@@ -226,10 +224,18 @@ function generateFog() {
                 <option value="perlin">Perlin</option>
                 <option value="simplex">Simplex</option>
                 <option value="worley">Worley</option>
-                <option value="fbm">FBM (Perlin)</option>
+                <option value="fractalPerlin">Fractal Perlin</option>
+                <option value="fractalSimplex">Fractal Simplex</option>
+                <option value="fractalWorley">Fractal Worley</option>
             </select>
             <p>Fog density (0-1, higher values create denser fog):</p>
             <input type="number" id="fog-density" style="width: 100%;" step="0.01" min="0" max="1" value="0.5" />
+            <p>Octaves (for fractal noise):</p>
+            <input type="number" id="octaves" style="width: 100%;" min="1" max="10" value="6" />
+            <p>Lacunarity (for fractal noise):</p>
+            <input type="number" id="lacunarity" style="width: 100%;" step="0.1" min="1" value="2" />
+            <p>Gain (for fractal noise):</p>
+            <input type="number" id="gain" style="width: 100%;" step="0.1" min="0" max="1" value="0.5" />
         `,
         buttons: {
             generate: {
@@ -239,15 +245,18 @@ function generateFog() {
                     const scale = parseFloat(html.find("#scale-input").val());
                     const noiseType = html.find("#noise-type").val();
                     const fogDensity = parseFloat(html.find("#fog-density").val());
-                    if (isNaN(seed) || isNaN(scale) || isNaN(fogDensity)) {
-                        ui.notifications.error("Invalid seed, scale, or density value.");
+                    const octaves = parseInt(html.find("#octaves").val(), 10);
+                    const lacunarity = parseFloat(html.find("#lacunarity").val());
+                    const gain = parseFloat(html.find("#gain").val());
+                    if (isNaN(seed) || isNaN(scale) || isNaN(fogDensity) || isNaN(octaves) || isNaN(lacunarity) || isNaN(gain)) {
+                        ui.notifications.error("Invalid input values.");
                         return;
                     }
                     if (fogDensity < 0 || fogDensity > 1) {
                         ui.notifications.error("Fog density must be between 0 and 1.");
                         return;
                     }
-                    applyFogGeneration(seed, scale, noiseType, fogDensity);
+                    applyFogGeneration(seed, scale, noiseType, fogDensity, octaves, lacunarity, gain);
                 }
             },
             cancel: {
@@ -258,7 +267,7 @@ function generateFog() {
     }).render(true);
 }
 
-function applyFogGeneration(seed, scale, noiseType, fogDensity) {
+function applyFogGeneration(seed, scale, noiseType, fogDensity, octaves, lacunarity, gain) {
     const scene = canvas.scene;
     const fogColor = 0xCCCCCC; // Fog gray color
     const fogOpacity = 0.5; // Adjust as needed
@@ -294,8 +303,14 @@ function applyFogGeneration(seed, scale, noiseType, fogDensity) {
                 case 'worley':
                     noiseValue = noiseModule.worley(col * scale, row * scale);
                     break;
-                case 'fbm':
-                    noiseValue = noiseModule.fbm(col * scale, row * scale);
+                case 'fractalPerlin':
+                    noiseValue = noiseModule.fractalPerlin(col * scale, row * scale, 0, octaves, lacunarity, gain);
+                    break;
+                case 'fractalSimplex':
+                    noiseValue = noiseModule.fractalSimplex(col * scale, row * scale, 0, octaves, lacunarity, gain);
+                    break;
+                case 'fractalWorley':
+                    noiseValue = noiseModule.fractalWorley(col * scale, row * scale, 0, octaves, lacunarity, gain);
                     break;
                 case 'perlin':
                 default:
@@ -395,23 +410,19 @@ function shiftFog(shiftCount, windDirection, windIntensity) {
     const shiftDistance = gridSize * windIntensity * shiftCount;
 
     fog.forEach(template => {
-        const data = template.document; // Use document directly
+        const data = template.document;
 
-        // Check if template has valid x and y properties
         if (data.x == null || data.y == null) {
             console.error("Template data missing x or y:", template);
             return;
         }
 
-        // Calculate new positions with wind influence
         let newX = data.x + dx * shiftDistance;
         let newY = data.y + dy * shiftDistance;
 
-        // Add random movement
         newX += (Math.random() - 0.5) * gridSize;
         newY += (Math.random() - 0.5) * gridSize;
 
-        // Ensure fog templates don't get closer than 1 tile to each other
         fog.forEach(otherTemplate => {
             if (template !== otherTemplate) {
                 const distance = Math.sqrt(Math.pow(newX - otherTemplate.document.x, 2) + Math.pow(newY - otherTemplate.document.y, 2));
@@ -422,7 +433,6 @@ function shiftFog(shiftCount, windDirection, windIntensity) {
             }
         });
 
-        // Update template position
         template.document.update({ x: newX, y: newY });
     });
 
@@ -446,7 +456,6 @@ function removeFog() {
     }
 }
 
-
 //Background painting functions
 async function showGenerateNoiseDialog() {
     const content = `
@@ -459,8 +468,22 @@ async function showGenerateNoiseDialog() {
             <option value="perlin">Perlin</option>
             <option value="simplex">Simplex</option>
             <option value="worley">Worley</option>
-            <option value="fbm">FBM (Perlin)</option>
+            <option value="fractalPerlin">Fractal Perlin</option>
+            <option value="fractalSimplex">Fractal Simplex</option>
+            <option value="fractalWorley">Fractal Worley</option>
         </select>
+        <p>Octaves (for fractal noise):</p>
+        <input type="number" id="octaves" style="width: 100%;" min="1" max="10" value="6" />
+        <p>Lacunarity (for fractal noise):</p>
+        <input type="number" id="lacunarity" style="width: 100%;" step="0.1" min="1" value="2" />
+        <p>Gain (for fractal noise):</p>
+        <input type="number" id="gain" style="width: 100%;" step="0.1" min="0" max="1" value="0.5" />
+        <p>
+            <label>
+                <input type="checkbox" id="normalize-noise" />
+                Normalize noise values (stretch to full 0-1 range)
+            </label>
+        </p>
     `;
     new Dialog({
         title: "Generate and Apply Noise",
@@ -472,11 +495,15 @@ async function showGenerateNoiseDialog() {
                     const seed = parseInt(html.find("#seed-input").val(), 10);
                     const scale = parseFloat(html.find("#scale-input").val());
                     const noiseType = html.find("#noise-type").val();
-                    if (isNaN(seed) || isNaN(scale)) {
-                        ui.notifications.error("Invalid seed or scale value.");
+                    const octaves = parseInt(html.find("#octaves").val(), 10);
+                    const lacunarity = parseFloat(html.find("#lacunarity").val());
+                    const gain = parseFloat(html.find("#gain").val());
+                    const normalizeNoise = html.find("#normalize-noise").prop("checked");
+                    if (isNaN(seed) || isNaN(scale) || isNaN(octaves) || isNaN(lacunarity) || isNaN(gain)) {
+                        ui.notifications.error("Invalid input values.");
                         return;
                     }
-                    generateAndApplyNoiseToBackground(seed, scale, noiseType);
+                    generateAndApplyNoiseToBackground(seed, scale, noiseType, octaves, lacunarity, gain, normalizeNoise);
                 }
             },
             cancel: {
@@ -487,7 +514,7 @@ async function showGenerateNoiseDialog() {
     }).render(true);
 }
 
-async function generateAndApplyNoiseToBackground(seed, scale, noiseType) {
+async function generateAndApplyNoiseToBackground(seed, scale, noiseType, octaves, lacunarity, gain, normalizeNoise) {
     if (!canvas || !canvas.scene) {
         console.error("Canvas or scene is not available.");
         return;
@@ -503,46 +530,37 @@ async function generateAndApplyNoiseToBackground(seed, scale, noiseType) {
     img.src = imagePath;
     img.onload = async () => {
         ctx.drawImage(img, 0, 0, width, height);
-        applyElevationNoiseToImage(ctx, width, height, seed, scale, noiseType);
+        applyElevationNoiseToImage(ctx, width, height, seed, scale, noiseType, octaves, lacunarity, gain, normalizeNoise);
         const texturePath = canvasEl.toDataURL('image/png');
 
         try {
-            // Update the scene with the new background
             await scene.update({ 'background.src': texturePath });
 
-            // Refresh the canvas and its components
             setTimeout(() => {
-                // Force a redraw of the canvas
                 canvas.draw();
 
-                // Use the updated method to refresh perception
                 const refreshFlags = {
                     refreshLighting: true,
                     refreshVision: true,
                     refreshSounds: true
                 };
 
-                // Check if refreshOcclusion is available (Foundry V12+)
                 if (typeof canvas.perception.refreshOcclusion === 'function') {
                     refreshFlags.refreshOcclusion = true;
                 } else if (typeof canvas.perception.refreshTiles === 'function') {
-                    // Fallback for older versions
                     refreshFlags.refreshTiles = true;
                 }
 
                 canvas.perception.update(refreshFlags);
 
-                // Refresh tokens if the method is available
                 if (canvas.tokens && typeof canvas.tokens.refresh === 'function') {
                     canvas.tokens.refresh();
                 } else if (canvas.tokens && canvas.tokens.placeables) {
-                    // Alternative way to refresh tokens
                     canvas.tokens.placeables.forEach(token => token.refresh());
                 }
 
-                // Emit a custom hook for other modules that might need to respond to the background change
                 Hooks.callAll('backgroundRefreshed', scene);
-            }, 100);  // 100ms delay to ensure the background has loaded
+            }, 100);
 
             ui.notifications.info('Elevation noise applied and background refreshed.');
         } catch (error) {
@@ -556,12 +574,17 @@ async function generateAndApplyNoiseToBackground(seed, scale, noiseType) {
     };
 }
 
-function applyElevationNoiseToImage(ctx, width, height, seed, scale, noiseType) {
+function applyElevationNoiseToImage(ctx, width, height, seed, scale, noiseType, octaves, lacunarity, gain, normalizeNoise) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
     const noiseModule = new NoiseModule();
     noiseModule.setSeed(seed);
 
+    let minNoiseValue = Infinity;
+    let maxNoiseValue = -Infinity;
+    const noiseValues = [];
+
+    // First pass: generate noise values and find min/max if normalizing
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             let noiseValue;
@@ -572,32 +595,54 @@ function applyElevationNoiseToImage(ctx, width, height, seed, scale, noiseType) 
                 case 'worley':
                     noiseValue = noiseModule.worley(x * scale, y * scale);
                     break;
-                case 'fbm':
-                    noiseValue = noiseModule.fbm(x * scale, y * scale);
+                case 'fractalPerlin':
+                    noiseValue = noiseModule.fractalPerlin(x * scale, y * scale, 0, octaves, lacunarity, gain);
+                    break;
+                case 'fractalSimplex':
+                    noiseValue = noiseModule.fractalSimplex(x * scale, y * scale, 0, octaves, lacunarity, gain);
+                    break;
+                case 'fractalWorley':
+                    noiseValue = noiseModule.fractalWorley(x * scale, y * scale, 0, octaves, lacunarity, gain);
                     break;
                 case 'perlin':
                 default:
                     noiseValue = (noiseModule.perlin(x * scale, y * scale) + 1) / 2;
             }
-            const color = getTerrainColor(noiseValue);
-            const index = (y * width + x) * 4;
-            data[index] = color.r;     // Red
-            data[index + 1] = color.g; // Green
-            data[index + 2] = color.b; // Blue
-            data[index + 3] = 255;     // Alpha (fully opaque)
+
+            if (normalizeNoise) {
+                minNoiseValue = Math.min(minNoiseValue, noiseValue);
+                maxNoiseValue = Math.max(maxNoiseValue, noiseValue);
+            }
+            noiseValues.push(noiseValue);
         }
     }
+
+    // Normalize noise values if the option is selected
+    if (normalizeNoise && minNoiseValue !== maxNoiseValue) {
+        const range = maxNoiseValue - minNoiseValue;
+        noiseValues.forEach((value, index) => {
+            noiseValues[index] = (value - minNoiseValue) / range;
+        });
+    }
+
+    // Second pass: apply noise values to image data
+    for (let i = 0; i < noiseValues.length; i++) {
+        const noiseValue = noiseValues[i];
+        const color = getTerrainColor(noiseValue);
+        const index = i * 4;
+        data[index] = color.r;     // Red
+        data[index + 1] = color.g; // Green
+        data[index + 2] = color.b; // Blue
+        data[index + 3] = 255;     // Alpha (fully opaque)
+    }
+
     ctx.putImageData(imageData, 0, 0);
-    console.log(`${noiseType} noise applied to image`);
+    console.log(`${noiseType} noise applied to image${normalizeNoise ? ' (normalized)' : ''}`);
 }
 
 function getTerrainColor(value) {
-    // Invert the value so that higher values are darker
     const invertedValue = 1 - value;
-
-    // Lerp between white (255, 255, 255) and black (0, 0, 0)
     const color = Math.round(invertedValue * 255);
-
     return { r: color, g: color, b: color };
 }
 
@@ -608,6 +653,3 @@ function interpolateColor(color1, color2, t) {
         b: Math.round(color1.b + (color2.b - color1.b) * t)
     };
 }
-
-
-

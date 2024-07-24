@@ -166,7 +166,7 @@ class NoiseModule {
         );
     }
 
-    fbm(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5, noiseType = 'perlin') {
+    fractal(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5, noiseType = 'perlin') {
         let amplitude = 1.0;
         let frequency = 1.0;
         let total = 0;
@@ -180,6 +180,18 @@ class NoiseModule {
         }
 
         return total / maxValue;
+    }
+
+    fractalPerlin(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5) {
+        return this.fractal(x, y, z, octaves, lacunarity, gain, 'perlin');
+    }
+
+    fractalSimplex(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5) {
+        return this.fractal(x, y, z, octaves, lacunarity, gain, 'simplex');
+    }
+
+    fractalWorley(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5) {
+        return this.fractal(x, y, z, octaves, lacunarity, gain, 'worley');
     }
 }
 
