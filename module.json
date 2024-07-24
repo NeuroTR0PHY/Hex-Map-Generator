@@ -7,7 +7,9 @@
     "compatibleCoreVersion": "12.5.329",
     "scripts": [
         "scripts/seedrandom.min.js",
+        "scripts/noise.js",
         "scripts/hex-generator.js"
+
     ],
     "styles": [ "styles/hex-generator.css" ],
     "packs": [],

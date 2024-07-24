@@ -1,59 +1,5 @@
-﻿// Simple seed-based random number generator
-class SeededRandom {
-    constructor(seed) {
-        this.seed = seed;
-        this.state = seed;
-    }
-
-    random() {
-        const x = Math.sin(this.state++) * 10000;
-        return x - Math.floor(x);
-    }
-
-    setSeed(seed) {
-        this.seed = seed;
-        this.state = seed;
-    }
-}
-
-// Perlin noise function with seeded random
-function noise(x, y, random, p) {
-    const X = Math.floor(x) & 255;
-    const Y = Math.floor(y) & 255;
-    x -= Math.floor(x);
-    y -= Math.floor(y);
-    const u = fade(x);
-    const v = fade(y);
-    const A = p[X] + Y, B = p[X + 1] + Y;
-    return lerp(v, lerp(u, grad(p[A], x, y, random), grad(p[B], x - 1, y, random)),
-        lerp(u, grad(p[A + 1], x, y - 1, random), grad(p[B + 1], x - 1, y - 1, random)));
-}
-
-function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
-function lerp(t, a, b) { return a + t * (b - a); }
-
-function grad(hash, x, y, random) {
-    const h = hash & 15;
-    const grad = 1 + (h & 7);
-    return ((h & 8) ? -grad : grad) * x + ((h & 4) ? -grad : grad) * y;
-}
-
-function initPermutationArray(random) {
-    const p = new Array(512);
-    const perm = Array.from({ length: 256 }, (_, i) => i);
-
-    // Shuffle perm array with seeded random
-    for (let i = perm.length - 1; i > 0; i--) {
-        const j = Math.floor(random.random() * (i + 1));
-        [perm[i], perm[j]] = [perm[j], perm[i]];
-    }
-
-    for (let i = 0; i < 256; i++) {
-        p[i] = p[i + 256] = perm[i];
-    }
-    return p;
-}
-
+﻿
+//Button controls
 Hooks.on('getSceneControlButtons', (controls) => {
     console.log('Adding Hex Map Generator button');
     controls.push({
@@ -66,6 +12,11 @@ Hooks.on('getSceneControlButtons', (controls) => {
                 name: "generate",
                 title: "Generate Hex Map",
                 icon: "fas fa-magic",
+            },
+            {
+                name: "clear",
+                title: "Clear Hex Map",
+                icon: "fas fa-trash",
             },
             {
                 name: "generateFog",
@@ -81,11 +32,6 @@ Hooks.on('getSceneControlButtons', (controls) => {
                 name: "removeFog",
                 title: "Remove Fog",
                 icon: "fas fa-sun",
-            },
-            {
-                name: "clear",
-                title: "Clear Hex Map",
-                icon: "fas fa-trash",
             },
             {
                 name: "generateColorMap",
@@ -131,6 +77,7 @@ Hooks.on('renderSceneControls', (app, html, data) => {
     });
 });
 
+//Hex map tile generator functions
 async function showHexMapDialog() {
     const content = await renderTemplate("modules/procedural-hex-maps/templates/template.html", {});
     new Dialog({
@@ -152,212 +99,6 @@ async function showHexMapDialog() {
         close: html => console.log("This always is logged no matter which option is chosen")
     }).render(true);
 }
-
-function generateHexMap(html) {
-    const width = html.find('input[name="map-width"]').val();
-    const height = html.find('input[name="map-height"]').val();
-    const hexSize = html.find('input[name="hex-size"]').val();
-    const terrainType = html.find('select[name="terrain-type"]').val();
-
-    console.log(`Generating hex map: ${width}x${height}, hex size: ${hexSize}, terrain: ${terrainType}`);
-    // Add your hex map generation logic here
-}
-
-function generateFog() {
-    new Dialog({
-        title: "Generate Fog",
-        content: `<p>Enter a seed value for fog generation:</p><input type="number" id="seed-value" style="width: 100%;" />`,
-        buttons: {
-            generate: {
-                label: "Generate",
-                callback: (html) => {
-                    const seed = parseInt(html.find("#seed-value").val(), 10);
-                    const random = new SeededRandom(seed);
-                    const p = initPermutationArray(random); // Initialize permutation array with seed
-                    applyFogGeneration(random, p);
-                }
-            },
-            cancel: {
-                label: "Cancel"
-            }
-        },
-        default: "generate"
-    }).render(true);
-}
-
-function applyFogGeneration(random, p) {
-    const scene = canvas.scene;
-    const fogColor = 0xCCCCCC; // Fog gray color
-    const fogOpacity = 0.5; // Adjust as needed
-    const templateSize = 7; // Size in feet
-    const noiseScale = 0.1;
-    const threshold = 0.95; // Adjust to control fog density
-    console.log("Starting fog generation script");
-
-    // Check if fog exists and remove it if it does
-    const existingFog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
-    if (existingFog.length > 0) {
-        console.log(`Removing ${existingFog.length} fog templates`);
-        canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", existingFog.map(f => f.id));
-        ui.notifications.info("Existing fog removed");
-    }
-
-    // Generate new fog
-    const gridSize = scene.grid.size * 2;
-    const rows = Math.ceil(canvas.dimensions.height / gridSize);
-    const cols = Math.ceil(canvas.dimensions.width / gridSize);
-    console.log(`Generating fog for ${rows} rows and ${cols} columns`);
-    let fogTemplates = [];
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            const noiseValue = noise(col * noiseScale, row * noiseScale, random, p);
-            if (noiseValue > threshold) {
-                const x = col * gridSize + gridSize / 2;
-                const y = row * gridSize + gridSize / 2;
-
-                fogTemplates.push({
-                    t: "circle",
-                    user: game.user.id,
-                    x: x,
-                    y: y,
-                    direction: 0,
-                    distance: templateSize,
-                    borderColor: fogColor,
-                    fillColor: fogColor,
-                    fillAlpha: fogOpacity,
-                    texture: "",
-                    hidden: false,
-                    flags: { isFog: true }
-                });
-            }
-        }
-    }
-    canvas.scene.createEmbeddedDocuments("MeasuredTemplate", fogTemplates)
-        .then(createdFog => {
-            console.log(`Created ${createdFog.length} fog templates`);
-            canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
-            ui.notifications.info("Fog generated");
-        })
-        .catch(error => {
-            console.error("Error creating fog:", error);
-        });
-}
-
-async function showShiftFogDialog() {
-    const content = `
-        <p>Enter the number of times to shift the fog:</p><input type="number" id="shift-count" value="1" min="1" style="width: 100%;"/>
-        <p>Select wind direction:</p>
-        <select id="wind-direction" style="width: 100%;">
-            <option value="N">North</option>
-            <option value="NE">North-East</option>
-            <option value="E">East</option>
-            <option value="SE">South-East</option>
-            <option value="S">South</option>
-            <option value="SW">South-West</option>
-            <option value="W">West</option>
-            <option value="NW">North-West</option>
-        </select>
-        <p>Set wind intensity (e.g., 1, 2, 3):</p><input type="number" id="wind-intensity" value="1" min="0" step="0.1" style="width: 100%;"/>
-    `;
-    new Dialog({
-        title: "Shift Fog",
-        content: content,
-        buttons: {
-            shift: {
-                label: "Shift Fog",
-                callback: (html) => {
-                    const shiftCount = parseInt(html.find("#shift-count").val(), 10);
-                    const windDirection = html.find("#wind-direction").val();
-                    const windIntensity = parseFloat(html.find("#wind-intensity").val());
-
-                    shiftFog(shiftCount, windDirection, windIntensity);
-                }
-            },
-            cancel: {
-                label: "Cancel"
-            }
-        },
-        default: "shift"
-    }).render(true);
-}
-
-// Function to shift fog based on wind direction and intensity
-function shiftFog(shiftCount, windDirection, windIntensity) {
-    const fog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
-    if (fog.length === 0) {
-        ui.notifications.warn("No fog to shift");
-        return;
-    }
-
-    const directions = {
-        N: { dx: 0, dy: -1 },
-        NE: { dx: 1, dy: -1 },
-        E: { dx: 1, dy: 0 },
-        SE: { dx: 1, dy: 1 },
-        S: { dx: 0, dy: 1 },
-        SW: { dx: -1, dy: 1 },
-        W: { dx: -1, dy: 0 },
-        NW: { dx: -1, dy: -1 }
-    };
-
-    const { dx, dy } = directions[windDirection] || { dx: 0, dy: 0 };
-    const gridSize = canvas.scene.grid.size;
-    const shiftDistance = gridSize * windIntensity * shiftCount;
-
-    fog.forEach(template => {
-        const data = template.document; // Use document directly
-
-        // Check if template has valid x and y properties
-        if (data.x == null || data.y == null) {
-            console.error("Template data missing x or y:", template);
-            return;
-        }
-
-        // Calculate new positions with wind influence
-        let newX = data.x + dx * shiftDistance;
-        let newY = data.y + dy * shiftDistance;
-
-        // Add random movement
-        newX += (Math.random() - 0.5) * gridSize;
-        newY += (Math.random() - 0.5) * gridSize;
-
-        // Ensure fog templates don't get closer than 1 tile to each other
-        fog.forEach(otherTemplate => {
-            if (template !== otherTemplate) {
-                const distance = Math.sqrt(Math.pow(newX - otherTemplate.document.x, 2) + Math.pow(newY - otherTemplate.document.y, 2));
-                if (distance < gridSize) {
-                    newX += Math.sign(newX - otherTemplate.document.x) * gridSize;
-                    newY += Math.sign(newY - otherTemplate.document.y) * gridSize;
-                }
-            }
-        });
-
-        // Update template position
-        template.document.update({ x: newX, y: newY });
-    });
-
-    canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
-    ui.notifications.info(`Fog shifted ${shiftCount} times to the ${windDirection}`);
-}
-
-function removeFog() {
-    const fog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
-    if (fog.length > 0) {
-        canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", fog.map(f => f.id))
-            .then(() => {
-                ui.notifications.info("Fog removed");
-                canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
-            })
-            .catch(error => {
-                console.error("Error removing fog:", error);
-            });
-    } else {
-        ui.notifications.warn("No fog to remove");
-    }
-}
-
-// Array to keep track of placed tile IDs
-let placedTileIds = [];
 
 async function generateHexMap(html) {
     const width = canvas.dimensions.width;
@@ -442,7 +183,7 @@ async function generateHexMap(html) {
     }
 }
 
-
+let placedTileIds = []; // Array to keep track of placed tile IDs
 
 async function fetchTileImages(folderPath) {
     try {
@@ -455,7 +196,6 @@ async function fetchTileImages(folderPath) {
         return [];
     }
 }
-
 
 function clearHexMap() {
     console.log('Clearing Hex Map');
@@ -472,23 +212,42 @@ function clearHexMap() {
 }
 
 
-async function showGenerateNoiseDialog() {
-    const content = `
-        <p>Enter a seed value for noise generation:</p><input type="number" id="seed-input" style="width: 100%;" />
-    `;
+//Fog generator functions
+function generateFog() {
     new Dialog({
-        title: "Generate and Apply Noise",
-        content: content,
+        title: "Generate Fog",
+        content: `
+            <p>Enter a seed value for fog generation:</p>
+            <input type="number" id="seed-value" style="width: 100%;" />
+            <p>Enter a scale factor (lower values = larger features):</p>
+            <input type="number" id="scale-input" style="width: 100%;" step="0.001" value="0.1" />
+            <p>Select noise type:</p>
+            <select id="noise-type" style="width: 100%;">
+                <option value="perlin">Perlin</option>
+                <option value="simplex">Simplex</option>
+                <option value="worley">Worley</option>
+                <option value="fbm">FBM (Perlin)</option>
+            </select>
+            <p>Fog density (0-1, higher values create denser fog):</p>
+            <input type="number" id="fog-density" style="width: 100%;" step="0.01" min="0" max="1" value="0.5" />
+        `,
         buttons: {
             generate: {
-                label: "Apply Noise",
+                label: "Generate",
                 callback: (html) => {
-                    const seed = parseInt(html.find("#seed-input").val(), 10);
-                    if (isNaN(seed)) {
-                        ui.notifications.error("Invalid seed value.");
+                    const seed = parseInt(html.find("#seed-value").val(), 10);
+                    const scale = parseFloat(html.find("#scale-input").val());
+                    const noiseType = html.find("#noise-type").val();
+                    const fogDensity = parseFloat(html.find("#fog-density").val());
+                    if (isNaN(seed) || isNaN(scale) || isNaN(fogDensity)) {
+                        ui.notifications.error("Invalid seed, scale, or density value.");
                         return;
                     }
-                    generateAndApplyNoiseToBackground(seed);
+                    if (fogDensity < 0 || fogDensity > 1) {
+                        ui.notifications.error("Fog density must be between 0 and 1.");
+                        return;
+                    }
+                    applyFogGeneration(seed, scale, noiseType, fogDensity);
                 }
             },
             cancel: {
@@ -499,129 +258,356 @@ async function showGenerateNoiseDialog() {
     }).render(true);
 }
 
-async function generateAndApplyNoiseToBackground(seed) {
+function applyFogGeneration(seed, scale, noiseType, fogDensity) {
+    const scene = canvas.scene;
+    const fogColor = 0xCCCCCC; // Fog gray color
+    const fogOpacity = 0.5; // Adjust as needed
+    const templateSize = 7; // Size in feet
+    const threshold = 1 - fogDensity; // Convert density to threshold
+    console.log("Starting fog generation script");
+
+    // Check if fog exists and remove it if it does
+    const existingFog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
+    if (existingFog.length > 0) {
+        console.log(`Removing ${existingFog.length} fog templates`);
+        canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", existingFog.map(f => f.id));
+        ui.notifications.info("Existing fog removed");
+    }
+
+    // Generate new fog
+    const gridSize = scene.grid.size * 2;
+    const rows = Math.ceil(canvas.dimensions.height / gridSize);
+    const cols = Math.ceil(canvas.dimensions.width / gridSize);
+    console.log(`Generating fog for ${rows} rows and ${cols} columns`);
+
+    const noiseModule = new NoiseModule();
+    noiseModule.setSeed(seed);
+
+    let fogTemplates = [];
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            let noiseValue;
+            switch (noiseType) {
+                case 'simplex':
+                    noiseValue = (noiseModule.simplex(col * scale, row * scale) + 1) / 2;
+                    break;
+                case 'worley':
+                    noiseValue = noiseModule.worley(col * scale, row * scale);
+                    break;
+                case 'fbm':
+                    noiseValue = noiseModule.fbm(col * scale, row * scale);
+                    break;
+                case 'perlin':
+                default:
+                    noiseValue = (noiseModule.perlin(col * scale, row * scale) + 1) / 2;
+            }
+
+            if (noiseValue > threshold) {
+                const x = col * gridSize + gridSize / 2;
+                const y = row * gridSize + gridSize / 2;
+
+                fogTemplates.push({
+                    t: "circle",
+                    user: game.user.id,
+                    x: x,
+                    y: y,
+                    direction: 0,
+                    distance: templateSize,
+                    borderColor: fogColor,
+                    fillColor: fogColor,
+                    fillAlpha: fogOpacity,
+                    texture: "",
+                    hidden: false,
+                    flags: { isFog: true }
+                });
+            }
+        }
+    }
+    canvas.scene.createEmbeddedDocuments("MeasuredTemplate", fogTemplates)
+        .then(createdFog => {
+            console.log(`Created ${createdFog.length} fog templates`);
+            canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
+            ui.notifications.info("Fog generated");
+        })
+        .catch(error => {
+            console.error("Error creating fog:", error);
+        });
+}
+
+async function showShiftFogDialog() {
+    const content = `
+        <p>Enter the number of times to shift the fog:</p><input type="number" id="shift-count" value="1" min="1" style="width: 100%;"/>
+        <p>Select wind direction:</p>
+        <select id="wind-direction" style="width: 100%;">
+            <option value="N">North</option>
+            <option value="NE">North-East</option>
+            <option value="E">East</option>
+            <option value="SE">South-East</option>
+            <option value="S">South</option>
+            <option value="SW">South-West</option>
+            <option value="W">West</option>
+            <option value="NW">North-West</option>
+        </select>
+        <p>Set wind intensity (e.g., 1, 2, 3):</p><input type="number" id="wind-intensity" value="1" min="0" step="0.1" style="width: 100%;"/>
+    `;
+    new Dialog({
+        title: "Shift Fog",
+        content: content,
+        buttons: {
+            shift: {
+                label: "Shift Fog",
+                callback: (html) => {
+                    const shiftCount = parseInt(html.find("#shift-count").val(), 10);
+                    const windDirection = html.find("#wind-direction").val();
+                    const windIntensity = parseFloat(html.find("#wind-intensity").val());
+
+                    shiftFog(shiftCount, windDirection, windIntensity);
+                }
+            },
+            cancel: {
+                label: "Cancel"
+            }
+        },
+        default: "shift"
+    }).render(true);
+}
+
+function shiftFog(shiftCount, windDirection, windIntensity) {
+    const fog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
+    if (fog.length === 0) {
+        ui.notifications.warn("No fog to shift");
+        return;
+    }
+
+    const directions = {
+        N: { dx: 0, dy: -1 },
+        NE: { dx: 1, dy: -1 },
+        E: { dx: 1, dy: 0 },
+        SE: { dx: 1, dy: 1 },
+        S: { dx: 0, dy: 1 },
+        SW: { dx: -1, dy: 1 },
+        W: { dx: -1, dy: 0 },
+        NW: { dx: -1, dy: -1 }
+    };
+
+    const { dx, dy } = directions[windDirection] || { dx: 0, dy: 0 };
+    const gridSize = canvas.scene.grid.size;
+    const shiftDistance = gridSize * windIntensity * shiftCount;
+
+    fog.forEach(template => {
+        const data = template.document; // Use document directly
+
+        // Check if template has valid x and y properties
+        if (data.x == null || data.y == null) {
+            console.error("Template data missing x or y:", template);
+            return;
+        }
+
+        // Calculate new positions with wind influence
+        let newX = data.x + dx * shiftDistance;
+        let newY = data.y + dy * shiftDistance;
+
+        // Add random movement
+        newX += (Math.random() - 0.5) * gridSize;
+        newY += (Math.random() - 0.5) * gridSize;
+
+        // Ensure fog templates don't get closer than 1 tile to each other
+        fog.forEach(otherTemplate => {
+            if (template !== otherTemplate) {
+                const distance = Math.sqrt(Math.pow(newX - otherTemplate.document.x, 2) + Math.pow(newY - otherTemplate.document.y, 2));
+                if (distance < gridSize) {
+                    newX += Math.sign(newX - otherTemplate.document.x) * gridSize;
+                    newY += Math.sign(newY - otherTemplate.document.y) * gridSize;
+                }
+            }
+        });
+
+        // Update template position
+        template.document.update({ x: newX, y: newY });
+    });
+
+    canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
+    ui.notifications.info(`Fog shifted ${shiftCount} times to the ${windDirection}`);
+}
+
+function removeFog() {
+    const fog = canvas.templates.placeables.filter(t => t.document.flags?.isFog);
+    if (fog.length > 0) {
+        canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", fog.map(f => f.id))
+            .then(() => {
+                ui.notifications.info("Fog removed");
+                canvas.perception.update({ refreshLighting: true, refreshVision: true }, true);
+            })
+            .catch(error => {
+                console.error("Error removing fog:", error);
+            });
+    } else {
+        ui.notifications.warn("No fog to remove");
+    }
+}
+
+
+//Background painting functions
+async function showGenerateNoiseDialog() {
+    const content = `
+        <p>Enter a seed value for noise generation:</p>
+        <input type="number" id="seed-input" style="width: 100%;" />
+        <p>Enter a scale factor (lower values = larger features):</p>
+        <input type="number" id="scale-input" style="width: 100%;" step="0.001" value="0.005" />
+        <p>Select noise type:</p>
+        <select id="noise-type" style="width: 100%;">
+            <option value="perlin">Perlin</option>
+            <option value="simplex">Simplex</option>
+            <option value="worley">Worley</option>
+            <option value="fbm">FBM (Perlin)</option>
+        </select>
+    `;
+    new Dialog({
+        title: "Generate and Apply Noise",
+        content: content,
+        buttons: {
+            generate: {
+                label: "Apply Noise",
+                callback: (html) => {
+                    const seed = parseInt(html.find("#seed-input").val(), 10);
+                    const scale = parseFloat(html.find("#scale-input").val());
+                    const noiseType = html.find("#noise-type").val();
+                    if (isNaN(seed) || isNaN(scale)) {
+                        ui.notifications.error("Invalid seed or scale value.");
+                        return;
+                    }
+                    generateAndApplyNoiseToBackground(seed, scale, noiseType);
+                }
+            },
+            cancel: {
+                label: "Cancel"
+            }
+        },
+        default: "generate"
+    }).render(true);
+}
+
+async function generateAndApplyNoiseToBackground(seed, scale, noiseType) {
     if (!canvas || !canvas.scene) {
         console.error("Canvas or scene is not available.");
         return;
     }
-
     const scene = canvas.scene;
     const imagePath = 'modules/procedural-hex-maps/MapTemplate.png';
-
     const canvasEl = document.createElement('canvas');
     const ctx = canvasEl.getContext('2d');
     const width = canvasEl.width = 4000;
     const height = canvasEl.height = 3000;
-
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = imagePath;
-    img.onload = () => {
+    img.onload = async () => {
         ctx.drawImage(img, 0, 0, width, height);
-        applyElevationNoiseToImage(ctx, width, height, seed);
-
+        applyElevationNoiseToImage(ctx, width, height, seed, scale, noiseType);
         const texturePath = canvasEl.toDataURL('image/png');
 
-        scene.update({ 'background.src': texturePath }).then(() => {
-            ui.notifications.info('Elevation noise applied to background image.');
-        }).catch((error) => {
+        try {
+            // Update the scene with the new background
+            await scene.update({ 'background.src': texturePath });
+
+            // Refresh the canvas and its components
+            setTimeout(() => {
+                // Force a redraw of the canvas
+                canvas.draw();
+
+                // Use the updated method to refresh perception
+                const refreshFlags = {
+                    refreshLighting: true,
+                    refreshVision: true,
+                    refreshSounds: true
+                };
+
+                // Check if refreshOcclusion is available (Foundry V12+)
+                if (typeof canvas.perception.refreshOcclusion === 'function') {
+                    refreshFlags.refreshOcclusion = true;
+                } else if (typeof canvas.perception.refreshTiles === 'function') {
+                    // Fallback for older versions
+                    refreshFlags.refreshTiles = true;
+                }
+
+                canvas.perception.update(refreshFlags);
+
+                // Refresh tokens if the method is available
+                if (canvas.tokens && typeof canvas.tokens.refresh === 'function') {
+                    canvas.tokens.refresh();
+                } else if (canvas.tokens && canvas.tokens.placeables) {
+                    // Alternative way to refresh tokens
+                    canvas.tokens.placeables.forEach(token => token.refresh());
+                }
+
+                // Emit a custom hook for other modules that might need to respond to the background change
+                Hooks.callAll('backgroundRefreshed', scene);
+            }, 100);  // 100ms delay to ensure the background has loaded
+
+            ui.notifications.info('Elevation noise applied and background refreshed.');
+        } catch (error) {
             console.error("Error updating scene:", error);
             ui.notifications.error("Error updating scene.");
-        });
+        }
     };
-
     img.onerror = (error) => {
         console.error("Error loading background image:", error);
         ui.notifications.error("Error loading background image.");
     };
 }
 
-function applyElevationNoiseToImage(ctx, width, height, seed) {
+function applyElevationNoiseToImage(ctx, width, height, seed, scale, noiseType) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
-
-    const random = new SeededRandom(seed);
-    const p = initPermutationArray(random);
-
-    const scale = 0.0005; // Adjust as needed
-    const noiseMatrix = [];
+    const noiseModule = new NoiseModule();
+    noiseModule.setSeed(seed);
 
     for (let y = 0; y < height; y++) {
-        const row = [];
         for (let x = 0; x < width; x++) {
-            const elevation = noise(x * scale, y * scale, random, p);
-            row.push(elevation);
+            let noiseValue;
+            switch (noiseType) {
+                case 'simplex':
+                    noiseValue = (noiseModule.simplex(x * scale, y * scale) + 1) / 2;
+                    break;
+                case 'worley':
+                    noiseValue = noiseModule.worley(x * scale, y * scale);
+                    break;
+                case 'fbm':
+                    noiseValue = noiseModule.fbm(x * scale, y * scale);
+                    break;
+                case 'perlin':
+                default:
+                    noiseValue = (noiseModule.perlin(x * scale, y * scale) + 1) / 2;
+            }
+            const color = getTerrainColor(noiseValue);
             const index = (y * width + x) * 4;
-
-            const color = interpolateColor({ r: 50, g: 50, b: 50 }, { r: 255, g: 255, b: 255 }, elevation);
-
-            data[index] = color.r;
-            data[index + 1] = color.g;
-            data[index + 2] = color.b;
-            data[index + 3] = 255; // Fully opaque
+            data[index] = color.r;     // Red
+            data[index + 1] = color.g; // Green
+            data[index + 2] = color.b; // Blue
+            data[index + 3] = 255;     // Alpha (fully opaque)
         }
-        noiseMatrix.push(row);
     }
-
     ctx.putImageData(imageData, 0, 0);
-    console.log("Elevation noise applied to image");
-    console.log("Noise Matrix:", noiseMatrix);
-
-    // Export noise matrix to an image
-    exportNoiseMatrixToImage(noiseMatrix, width, height);
+    console.log(`${noiseType} noise applied to image`);
 }
 
-function smoothNoise(value) {
-    // Simple smoothing function for noise values
-    return Math.max(0, Math.min(1, value)); // Clamp value between 0 and 1
+function getTerrainColor(value) {
+    // Invert the value so that higher values are darker
+    const invertedValue = 1 - value;
+
+    // Lerp between white (255, 255, 255) and black (0, 0, 0)
+    const color = Math.round(invertedValue * 255);
+
+    return { r: color, g: color, b: color };
 }
 
 function interpolateColor(color1, color2, t) {
-    // Interpolate between two colors
     return {
-        r: Math.round(lerp(color1.r, color2.r, t)),
-        g: Math.round(lerp(color1.g, color2.g, t)),
-        b: Math.round(lerp(color1.b, color2.b, t))
+        r: Math.round(color1.r + (color2.r - color1.r) * t),
+        g: Math.round(color1.g + (color2.g - color1.g) * t),
+        b: Math.round(color1.b + (color2.b - color1.b) * t)
     };
 }
 
-function lerp(start, end, t) {
-    return start + t * (end - start);
-}
 
-function exportNoiseMatrixToImage(matrix, width, height) {
-    const canvasEl = document.createElement('canvas');
-    const ctx = canvasEl.getContext('2d');
-    canvasEl.width = width;
-    canvasEl.height = height;
 
-    const imageData = ctx.createImageData(width, height);
-    const data = imageData.data;
-
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const value = matrix[y][x];
-            const index = (y * width + x) * 4;
-
-            const color = Math.floor(value * 255);
-            data[index] = color;
-            data[index + 1] = color;
-            data[index + 2] = color;
-            data[index + 3] = 255; // Fully opaque
-        }
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-
-    // Convert to base64
-    const base64Image = canvasEl.toDataURL('image/png');
-
-    // Create a download link
-    const link = document.createElement('a');
-    link.href = base64Image;
-    link.download = 'noise_image.png';
-    link.textContent = 'Download Noise Image';
-
-    // Append the link to the body for user interaction
-    document.body.appendChild(link);
-}
