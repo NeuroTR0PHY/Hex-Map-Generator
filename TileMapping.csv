@@ -1,0 +1,109 @@
+﻿Tile Name,Tile Type,Modifier,Variant,Elevation Low,Elevation High,Temperature Low,Temperature High,Precipitation Low,Precipitation High,Wind Low,Wind High
+Hex_-Snow(field)_1.png,Plains or Base,snowy,field,2,3,1,3,4,10,4,10
+Hex_-Sparse_Trees(lush)_2.png,Sparse trees,lush,,3,4,4,7,6,10,1,5
+Hex_-Hills(snowy)_1.png,Hills,snowy,,5,6,1,3,4,10,4,10
+Hex_-Water-Ocean(soft_waves)_2.png,Water,ocean,soft waves,1,2,4,7,8,10,1,10
+Hex_-Hill_with_Tree(lush).png,Hill,lush,tree,5,6,4,7,5,10,1,5
+Hex_-Urban-Farm(lush).png,Urban,lush,farm,2,3,4,7,6,10,1,5
+Hex_-Sparse_Trees(lush)_1.png,Sparse trees,lush,,3,4,4,7,6,10,1,5
+Hex_-Snow(field)_2.png,Plains or Base,snowy,field,2,3,1,3,4,10,4,10
+"Hex_-_Mountains,medium(rocky).png",Mountain,rocky,medium,8,9,7,10,1,4,4,10
+Hex_-Hills(snowy)_2.png,Hills,snowy,,5,6,1,3,4,10,4,10
+Hex_-Water-Ocean(soft_waves)_1.png,Water,ocean,soft waves,1,2,4,7,8,10,1,10
+Hex_-Hills(snowy)_3.png,Hills,snowy,,5,6,1,3,4,10,4,10
+"Hex_-_Mountains,foothills(rocky).png",Mountain,rocky,foothills,6,7,7,10,1,4,4,10
+Hex_-Snow(field)_3.png,Plains or Base,snowy,field,2,3,1,3,4,10,4,10
+Hex_-Snow(area)_2.png,Plains or Base,snowy,area,2,3,1,3,4,10,4,10
+"Hex_-_Forest,conifer(lush).png",Forest,lush,conifer,4,5,4,6,7,10,1,5
+Hex_-Snow(field)_4.png,Plains or Base,snowy,field,2,3,1,3,4,10,4,10
+Hex_-Hills(snowy)_4.png,Hills,snowy,,5,6,1,3,4,10,4,10
+Hex_-Snow(area)_1.png,Plains or Base,snowy,area,2,3,1,3,4,10,4,10
+Hex_-Base(snowy).png,Base,snowy,,2,3,1,3,4,10,4,10
+Hex_-Hills(snowy)_5.png,Hills,snowy,,5,6,1,3,4,10,4,10
+"Hex_-_Mountains,peak(snowy).png",Mountain,snowy,peak,9,10,1,3,4,10,4,10
+"Hex_-_Forest,conifer(snowy).png",Forest,snowy,conifer,4,5,1,3,5,10,1,5
+Hex_-Snow(field)_5.png,Plains or Base,snowy,field,2,3,1,3,4,10,4,10
+Hex_-Urban-Town(lush).png,Urban,lush,town,2,3,4,7,6,10,1,5
+"Hex_-_Mountains,foothills(lush).png",Mountain,lush,foothills,6,7,4,7,6,10,1,5
+Hex_-Water-Swamp(still_water)_3.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+"Hex_-Urban-_Modern_Town,inhabited(lush)_1.png",Urban,lush,modern town,2,3,4,7,6,10,1,5
+"Hex_-_Forest,mixed(lush).png",Forest,lush,mixed,4,5,4,7,6,10,1,5
+Hex_-Hills(desert)_1b.png,Hills,desert,,5,6,8,10,1,3,4,10
+Hex_-Water-Swamp(still_water)_2.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+"Hex_-_Mountains,medium(snowy).png",Mountain,snowy,medium,8,9,1,3,4,10,4,10
+Hex_-Plains(lush)_4.png,Plains,lush,,3,4,4,7,6,10,1,5
+Hex_-Plains(lush)_5.png,Plains,lush,,3,4,4,7,6,10,1,5
+"Hex_-Urban-_Modern_Town,inhabited(lush)_2.png",Urban,lush,modern town,2,3,4,7,6,10,1,5
+"Hex_-_Mountains,foothills(snowy).png",Mountain,snowy,foothills,6,7,1,3,4,10,4,10
+Hex_-Ruin(desert).png,Base,desert,,5,6,8,10,1,3,4,10
+Hex_-Base(ocean).png,Base,ocean,,1,2,4,7,8,10,1,10
+Hex_-Urban-City(lush).png,Urban,lush,city,2,3,4,7,6,10,1,5
+Hex_-Water-Swamp(still_water)_1.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+Hex_-Water-Swamp(still_water)_5.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+Hex_-Plains(lush)_1.png,Plains,lush,,3,4,4,7,6,10,1,5
+Hex_-Plains(farmland)_3.png,Plains,farmland,,3,4,4,7,6,10,1,5
+Hex_-Water-Swamp(waves)_1.png,Water,ocean,waves,1,2,4,7,8,10,1,10
+Hex_-Plains(farmland)_2.png,Plains,farmland,,3,4,4,7,6,10,1,5
+Hex_-Water-Swamp(still_water)_4.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+Hex_-Water-Ocean(waves)_1.png,Water,ocean,waves,1,2,4,7,8,10,1,10
+"Hex_-_Mountain,Volcano(rocky)_1.png",Mountain,rocky,volcano,9,10,4,7,6,10,1,10
+"Hex_-_Mountains,low(lush).png",Mountain,lush,low,7,8,4,7,6,10,1,5
+"Hex_-_Mountains,peak(lush).png",Mountain,lush,peak,9,10,4,7,6,10,1,5
+Hex_-Plains(lush)_2.png,Plains,lush,,3,4,4,7,6,10,1,5
+Hex_-Plains(farmland)_1.png,Plains,farmland,,3,4,4,7,6,10,1,5
+Hex_-Water-Swamp(waves)_2.png,Water,ocean,waves,1,2,4,7,8,10,1,10
+"Hex_-_Mountains,peak(rocky).png",Mountain,rocky,peak,9,10,7,10,1,4,4,10
+Hex_-Plains(lush)_3.png,Plains,lush,,3,4,4,7,6,10,1,5
+Hex_-Base(rocky).png,Base,rocky,,2,3,7,10,1,4,4,10
+"Hex_-_Mountain,Volcano(rocky)_2.png",Mountain,rocky,volcano,9,10,7,10,1,4,4,10
+Hex_-Water-Ocean(waves)_2.png,Water,ocean,waves,1,2,4,7,8,10,1,10
+Hex_-Hills(desert)_3b.png,Hills,desert,,5,6,8,10,1,3,4,10
+Hex_-Urban-Farmland(lush)_2.png,Urban,lush,farmland,2,3,4,7,6,10,1,5
+Hex_-Hills(lush)_3.png,Hills,lush,,5,6,4,7,5,10,1,5
+Hex_-Ruin(lush).png,Base,lush,,5,6,4,7,5,10,1,5
+Hex_-Hills(lush)_2.png,Hills,lush,,5,6,4,7,5,10,1,5
+Hex_-Urban-Farmland(lush)_3.png,Urban,lush,farmland,2,3,4,7,6,10,1,5
+Hex_-Snow(drifts)_1.png,Plains or Base,snowy,drifts,2,3,1,3,4,10,4,10
+"Hex_-Urban-_Modern_Town,abandoned(lush)_1.png",Urban,lush,modern town,2,3,4,7,6,10,1,5
+Hex_-Urban-Tower(lush).png,Urban,lush,tower,2,3,4,7,6,10,1,5
+Hex_-Urban-Farmland(lush)_1.png,Urban,lush,farmland,2,3,4,7,6,10,1,5
+Hex_-Hills(lush)_1.png,Hills,lush,,5,6,4,7,5,10,1,5
+Hex_-Snow(drifts)_2.png,Plains or Base,snowy,drifts,2,3,1,3,4,10,4,10
+"Hex_-Urban-_Modern_Town,abandoned(lush)_2.png",Urban,lush,modern town,2,3,4,7,6,10,1,5
+Hex_-Water-Swamp(soft_waves)_1.png,Water,ocean,soft waves,1,2,4,7,8,10,1,10
+Hex_-Hills(lush)_5.png,Hills,lush,,5,6,4,7,5,10,1,5
+Hex_-Plains(desert)_5.png,Plains,desert,,5,6,8,10,1,3,4,10
+Hex_-Plains(desert)_4.png,Plains,desert,,5,6,8,10,1,3,4,10
+Hex_-Hills(lush)_4.png,Hills,lush,,5,6,4,7,5,10,1,5
+"Hex_-_Mountains,low(snowy).png",Mountain,snowy,low,7,8,1,3,4,10,4,10
+Hex_-Water-Swamp(soft_waves)_2.png,Water,ocean,soft waves,1,2,4,7,8,10,1,10
+"Hex_-_Forest,conifer(lush)_2.png",Forest,lush,conifer,4,5,4,6,7,10,1,5
+Hex_-Hills(desert)_2b.png,Hills,desert,,5,6,8,10,1,3,4,10
+Hex_-Wetlands(damp)_7.png,Plains,damp,,3,4,4,7,6,10,1,5
+Hex_-Plains(damp)_1.png,Plains,damp,,3,4,4,7,6,10,1,5
+Hex_-Wetlands(damp)_6.png,Plains,damp,,3,4,4,7,6,10,1,5
+Hex_-Hills(desert)_1.png,Hills,desert,,5,6,8,10,1,3,4,10
+Hex_-Base(lush).png,Base,lush,,3,4,4,7,6,10,1,5
+"Hex_-Urban-_Modern_Town,lumber_yard(lush).png",Urban,lush,lumber yard,2,3,4,7,6,10,1,5
+Hex_-Water-Ocean(still_water)_4.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+Hex_-Urban-Monastery(lush).png,Urban,lush,monastery,2,3,4,7,6,10,1,5
+Hex_-Hills(desert)_3.png,Hills,desert,,5,6,8,10,1,3,4,10
+Hex_-Wetlands(damp)_4.png,Plains,damp,,3,4,4,7,6,10,1,5
+Hex_-Plains(damp)_2.png,Plains,damp,,3,4,4,7,6,10,1,5
+Hex_-Plains(damp)_3.png,Plains,damp,,3,4,4,7,6,10,1,5
+Hex_-Wetlands(damp)_5.png,Plains,damp,,3,4,4,7,6,10,1,5
+Hex_-Hills(desert)_2.png,Hills,desert,,5,6,8,10,1,3,4,10
+"Hex_-_Forest,deciduous(lush).png",Forest,lush,deciduous,4,5,5,8,6,10,1,5
+Hex_-Water-Ocean(still_water)_5.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+Hex_-Water-Ocean(still_water)_1.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+Hex_-Wetlands(damp)_1.png,Plains,damp,,3,4,4,7,6,10,1,5
+"Hex_-_Forest,conifer(snowy)_2.png",Forest,snowy,conifer,4,5,1,3,5,10,1,5
+"Hex_-_Mountain,Volcano(lush)_1.png",Mountain,lush,volcano,9,10,4,7,6,10,1,10
+"Hex_-_Mountain,Volcano(snowy)_1.png",Mountain,snowy,volcano,9,10,1,3,4,10,4,10
+"Hex_-_Mountains,low(rocky).png",Mountain,rocky,low,7,8,7,10,1,4,4,10
+Hex_-Hills(desert)_4b.png,Hills,desert,,5,6,8,10,1,3,4,10
+"Hex_-_Mountains,medium(lush).png",Mountain,lush,medium,8,9,4,7,6,10,1,5
+Hex_-Sparse_Trees(snowy).png,Sparse trees,snowy,,3,4,1,3,4,10,4,10
+Hex_-Water-Ocean(still_water)_2.png,Water,ocean,still water,1,2,4,7,8,10,1,10
+Hex_-Wetlands(damp)_2.png,Plains,damp,,3,4,4,7,6,10,1,5
+Hex_-Plains(damp)_4.png,Plains,damp,,3,4,4,7,6,10,1,5

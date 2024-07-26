@@ -100,114 +100,114 @@ async function showHexMapDialog() {
 }
 
 // Hex data structure
-class HexData {
-    constructor(id, x, y) {
-        this.id = id;
-        this.x = x;
-        this.y = y;
-        this.row = 0;
+    class HexData {
+        constructor(id, x, y) {
+            this.id = id;
+            this.x = x;
+            this.y = y;
+            this.row = 0;
 
-        // Terrain characteristics
-        this.elevation = 0;
-        this.humidity = 0;
-        this.temperature = 0;
-        this.precipitation = 0;
-        this.windSpeed = 0;
-        this.windDirection = 0;
+            // Terrain characteristics
+            this.elevation = 0;
+            this.humidity = 0;
+            this.temperature = 0;
+            this.precipitation = 0;
+            this.windSpeed = 0;
+            this.windDirection = 0;
 
-        // Biome and vegetation
-        this.biomeType = '';
-        this.vegetationType = '';
-        this.vegetationDensity = 0;
+            // Biome and vegetation
+            this.biomeType = '';
+            this.vegetationType = '';
+            this.vegetationDensity = 0;
 
-        // Water features
-        this.isWater = false;
-        this.waterDepth = 0;
-        this.isCoastal = false;
-        this.riverSize = 0;
+            // Water features
+            this.isWater = false;
+            this.waterDepth = 0;
+            this.isCoastal = false;
+            this.riverSize = 0;
 
-        // Resources and features
-        this.resources = [];
-        this.landmarks = [];
+            // Resources and features
+            this.resources = [];
+            this.landmarks = [];
 
-        // Civilization and development
-        this.owner = '';
-        this.population = 0;
-        this.developmentLevel = 0;
-        this.buildingType = '';
+            // Civilization and development
+            this.owner = '';
+            this.population = 0;
+            this.developmentLevel = 0;
+            this.buildingType = '';
 
-        // Game mechanics
-        this.movementCost = 1;
-        this.defensebonus = 0;
-        this.visibilityRange = 1;
+            // Game mechanics
+            this.movementCost = 1;
+            this.defensebonus = 0;
+            this.visibilityRange = 1;
 
-        // Environmental conditions
-        this.pollutionLevel = 0;
-        this.radiationLevel = 0;
+            // Environmental conditions
+            this.pollutionLevel = 0;
+            this.radiationLevel = 0;
 
-        // Time-based properties
-        this.seasonalEffects = {};
-        this.weatherCondition = '';
+            // Time-based properties
+            this.seasonalEffects = {};
+            this.weatherCondition = '';
 
-        // Fog of war
-        this.isExplored = false;
-        this.lastExploredTurn = -1;
+            // Fog of war
+            this.isExplored = false;
+            this.lastExploredTurn = -1;
 
-        // New properties for encounters, items, and notes
-        this.potentialEnemies = [];
-        this.items = [];
-        this.notes = '';
+            // New properties for encounters, items, and notes
+            this.potentialEnemies = [];
+            this.items = [];
+            this.notes = '';
 
-        // Custom properties
-        this.customProperties = {};
+            // Custom properties
+            this.customProperties = {};
 
 
+        }
+
+        setRow(row) {
+            this.row = row;
+        }
+
+        // Methods for managing potential enemies
+        addPotentialEnemy(enemy) {
+            this.potentialEnemies.push(enemy);
+        }
+
+        removePotentialEnemy(enemyId) {
+            this.potentialEnemies = this.potentialEnemies.filter(e => e.id !== enemyId);
+        }
+
+        // Methods for managing items
+        addItem(item) {
+            this.items.push(item);
+        }
+
+        removeItem(itemId) {
+            this.items = this.items.filter(i => i.id !== itemId);
+        }
+
+        // Method to update notes
+        updateNotes(newNotes) {
+            this.notes = newNotes;
+        }
+
+        calculateMovementCost() {
+            let cost = this.movementCost;
+            if (this.elevation > 0.7) cost *= 2;
+            if (this.isWater) cost *= this.waterDepth > 2 ? 3 : 1.5;
+            return cost;
+        }
+
+        updateSeasonalEffects(currentSeason) {
+            this.temperature += this.seasonalEffects[currentSeason]?.temperature || 0;
+            this.precipitation += this.seasonalEffects[currentSeason]?.precipitation || 0;
+        }
     }
-
-    setRow(row) {
-        this.row = row;
-    }
-
-    // Methods for managing potential enemies
-    addPotentialEnemy(enemy) {
-        this.potentialEnemies.push(enemy);
-    }
-
-    removePotentialEnemy(enemyId) {
-        this.potentialEnemies = this.potentialEnemies.filter(e => e.id !== enemyId);
-    }
-
-    // Methods for managing items
-    addItem(item) {
-        this.items.push(item);
-    }
-
-    removeItem(itemId) {
-        this.items = this.items.filter(i => i.id !== itemId);
-    }
-
-    // Method to update notes
-    updateNotes(newNotes) {
-        this.notes = newNotes;
-    }
-
-    calculateMovementCost() {
-        let cost = this.movementCost;
-        if (this.elevation > 0.7) cost *= 2;
-        if (this.isWater) cost *= this.waterDepth > 2 ? 3 : 1.5;
-        return cost;
-    }
-
-    updateSeasonalEffects(currentSeason) {
-        this.temperature += this.seasonalEffects[currentSeason]?.temperature || 0;
-        this.precipitation += this.seasonalEffects[currentSeason]?.precipitation || 0;
-    }
-}
 
 // Function to create hex grid data
 function createHexGridData(width, height, hexSize) {
     const hexGrid = [];
-    const hexWidth = hexSize + 10;
+    const hexWidth = hexSize + 11;
     const hexHeight = hexSize;
     const horizontalSpacing = hexWidth * 3 / 4;
     const verticalSpacing = hexHeight;
