@@ -99,6 +99,157 @@ async function showHexMapDialog() {
     }).render(true);
 }
 
+// Hex data structure
+class HexData {
+    constructor(id, x, y) {
+        this.id = id;
+        this.x = x;
+        this.y = y;
+        this.row = 0;
+
+        // Terrain characteristics
+        this.elevation = 0;
+        this.humidity = 0;
+        this.temperature = 0;
+        this.precipitation = 0;
+        this.windSpeed = 0;
+        this.windDirection = 0;
+
+        // Biome and vegetation
+        this.biomeType = '';
+        this.vegetationType = '';
+        this.vegetationDensity = 0;
+
+        // Water features
+        this.isWater = false;
+        this.waterDepth = 0;
+        this.isCoastal = false;
+        this.riverSize = 0;
+
+        // Resources and features
+        this.resources = [];
+        this.landmarks = [];
+
+        // Civilization and development
+        this.owner = '';
+        this.population = 0;
+        this.developmentLevel = 0;
+        this.buildingType = '';
+
+        // Game mechanics
+        this.movementCost = 1;
+        this.defensebonus = 0;
+        this.visibilityRange = 1;
+
+        // Environmental conditions
+        this.pollutionLevel = 0;
+        this.radiationLevel = 0;
+
+        // Time-based properties
+        this.seasonalEffects = {};
+        this.weatherCondition = '';
+
+        // Fog of war
+        this.isExplored = false;
+        this.lastExploredTurn = -1;
+
+        // New properties for encounters, items, and notes
+        this.potentialEnemies = [];
+        this.items = [];
+        this.notes = '';
+
+        // Custom properties
+        this.customProperties = {};
+
+
+    }
+
+    setRow(row) {
+        this.row = row;
+    }
+
+    // Methods for managing potential enemies
+    addPotentialEnemy(enemy) {
+        this.potentialEnemies.push(enemy);
+    }
+
+    removePotentialEnemy(enemyId) {
+        this.potentialEnemies = this.potentialEnemies.filter(e => e.id !== enemyId);
+    }
+
+    // Methods for managing items
+    addItem(item) {
+        this.items.push(item);
+    }
+
+    removeItem(itemId) {
+        this.items = this.items.filter(i => i.id !== itemId);
+    }
+
+    // Method to update notes
+    updateNotes(newNotes) {
+        this.notes = newNotes;
+    }
+
+    calculateMovementCost() {
+        let cost = this.movementCost;
+        if (this.elevation > 0.7) cost *= 2;
+        if (this.isWater) cost *= this.waterDepth > 2 ? 3 : 1.5;
+        return cost;
+    }
+
+    updateSeasonalEffects(currentSeason) {
+        this.temperature += this.seasonalEffects[currentSeason]?.temperature || 0;
+        this.precipitation += this.seasonalEffects[currentSeason]?.precipitation || 0;
+    }
+}
+
+// Function to create hex grid data
+function createHexGridData(width, height, hexSize) {
+    const hexGrid = [];
+    const hexWidth = hexSize + 10;
+    const hexHeight = hexSize;
+    const horizontalSpacing = hexWidth * 3 / 4;
+    const verticalSpacing = hexHeight;
+
+    const columns = Math.ceil(width / horizontalSpacing);
+    const rows = Math.ceil(height / hexHeight);
+
+    let id = 1;
+    for (let col = 0; col < columns; col++) {
+        for (let row = 0; row < rows; row++) {
+            const x = col * horizontalSpacing;
+            const y = row * verticalSpacing + (col % 2) * (hexHeight / 2);
+
+            // Calculate the center of the hex
+            const centerX = x + (hexWidth+10) / 2;
+            const centerY = y + hexHeight / 2;
+
+            if (centerX < width && centerY < height) {
+                // Calculate the staggered row number
+                let staggeredRow;
+                if (col % 2 === 0) {
+                    // Even columns
+                    staggeredRow = row * 2 + 1;
+                } else {
+                    // Odd columns
+                    staggeredRow = row * 2 + 2;
+                }
+
+                // Create HexData object and set its row
+                const hexData = new HexData(id, centerX, centerY);
+                hexData.setRow(staggeredRow);
+                hexGrid.push(hexData);
+                id++;
+            }
+        }
+    }
+
+    return hexGrid;
+}
+
+placedTileIds = [];
+// Updated generateHexMap function with row-based z-index
 async function generateHexMap(html) {
     const width = canvas.dimensions.width;
     const height = canvas.dimensions.height;
@@ -107,83 +258,106 @@ async function generateHexMap(html) {
 
     console.log(`Generating hex map: ${width}x${height}, hex size: ${hexSize}, terrain: ${terrainType}`);
 
+    const hexGrid = createHexGridData(width, height, hexSize);
+
+    let placedTiles = hexGrid.map(hex => ({
+        x: hex.x - (hexSize+10) / 2,  // Adjust x to top-left corner
+        y: hex.y - hexSize / 2,  // Adjust y to top-left corner
+        width: hexSize+10,
+        height: hexSize,
+        rotation: 0,
+        sort: hex.row, // Use the row number as the z-index (sort value)
+        flags: { isHexTile: true, hexId: hex.id }
+    }));
+
+    console.log('Total tiles to place:', placedTiles.length);
+
     const tileFolder = "modules/procedural-hex-maps/tiles";
     const tileImages = await fetchTileImages(tileFolder);
-    console.log("Tile images fetched:", tileImages);
     if (tileImages.length === 0) {
         ui.notifications.warn("No tiles found in the specified directory.");
         return;
     }
 
     const filteredImages = terrainType === 'mixed' ? tileImages : tileImages.filter(img => img.toLowerCase().includes(terrainType.toLowerCase()));
-    console.log("Filtered images:", filteredImages);
-
-    const gridSize = hexSize;
-    const rows = Math.ceil(height / (gridSize * 1.5)) + 1; // Ensure coverage
-    const cols = Math.ceil(width / (gridSize * Math.sqrt(3))) + 1; // Ensure coverage
-
-    let placedTiles = [];
-    placedTileIds = []; // Reset placedTileIds
-
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            const x = col * gridSize * Math.sqrt(3) + (row % 2) * (gridSize * Math.sqrt(3) / 2);
-            const y = row * gridSize * 1.5;
-
-            // Debug output
-            console.log(`Placing tile at (${x}, ${y})`);
-
-            // Check if x and y are within bounds
-            if (x < width && y < height) {
-                placedTiles.push({
-                    x: x,
-                    y: y,
-                    width: gridSize,
-                    height: gridSize,
-                    rotation: 0,
-                    z: 0,
-                    flags: { isHexTile: true }
-                });
-            }
-        }
-    }
-
-    console.log('Total tiles to place:', placedTiles.length);
 
     let createdTiles = await canvas.scene.createEmbeddedDocuments("Tile", placedTiles);
     placedTileIds = createdTiles.map(tile => tile.id);
-    console.log('Created tiles:', createdTiles);
 
     let updateData = createdTiles.map(tile => {
         const tileImage = filteredImages[Math.floor(Math.random() * filteredImages.length)];
         const texturePath = `${tileFolder}/${tileImage}`;
 
-        console.log(`Tile ID: ${tile.id}`);
-        console.log(`Tile Document:`, tile);
-
         return {
             _id: tile.id,
             texture: {
                 src: texturePath,
-                scaleX: 4,
-                scaleY: 4,
+                scaleX: 2,
+                scaleY: 2,
                 offsetX: 0,
                 offsetY: 0
-            }
+            },
+            sort: tile.sort // Ensure the z-index is set in the update as well
         };
     });
 
     try {
-        console.log('Update data before applying:', updateData);
         await canvas.scene.updateEmbeddedDocuments("Tile", updateData);
         console.log('All tiles placed and images assigned');
     } catch (error) {
         console.error("Error updating tile textures:", error);
     }
+
+    // HexData objects are already created in createHexGridData
+    await canvas.scene.setFlag("procedural-hex-maps", "hexGridData", hexGrid);
 }
 
-let placedTileIds = []; // Array to keep track of placed tile IDs
 
+// Function to update the display of a hex's data
+function updateHexDisplay(hexId) {
+    const hexGrid = canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
+    const hexData = hexGrid.find(hex => hex.id === hexId);
+
+    const enemyList = document.getElementById(`hex-${hexId}-enemy-list`);
+    enemyList.innerHTML = hexData.potentialEnemies.map(enemy =>
+        `<div class="potential-enemy">${enemy.name}</div>`
+    ).join('');
+
+    const itemList = document.getElementById(`hex-${hexId}-item-list`);
+    itemList.innerHTML = hexData.items.map(item =>
+        `<div class="hex-item">${item.name}</div>`
+    ).join('');
+
+    const notesField = document.getElementById(`hex-${hexId}-notes`);
+    notesField.value = hexData.notes;
+}
+
+// Function to create the UI for a hex
+function createHexUI(hexId) {
+    const hexElement = document.getElementById(`hex-${hexId}`);
+    hexElement.innerHTML = `
+        <div id="hex-${hexId}-drop-zone" class="hex-drop-zone">
+            <h3>Enemies</h3>
+            <div id="hex-${hexId}-enemy-list" class="enemy-list"></div>
+            <h3>Items</h3>
+            <div id="hex-${hexId}-item-list" class="item-list"></div>
+        </div>
+        <textarea id="hex-${hexId}-notes" placeholder="Enter notes here..."></textarea>
+    `;
+
+    setupHexDragDrop(hexId);
+    updateHexDisplay(hexId);
+
+    const notesField = document.getElementById(`hex-${hexId}-notes`);
+    notesField.addEventListener('change', async () => {
+        const hexGrid = await canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
+        const hexData = hexGrid.find(hex => hex.id === hexId);
+        hexData.updateNotes(notesField.value);
+        await canvas.scene.setFlag("procedural-hex-maps", "hexGridData", hexGrid);
+    });
+}
+
+// Existing helper functions
 async function fetchTileImages(folderPath) {
     try {
         const response = await fetch(`${folderPath}/images.json`);
@@ -201,7 +375,7 @@ function clearHexMap() {
     if (placedTileIds.length > 0) {
         canvas.scene.deleteEmbeddedDocuments("Tile", placedTileIds)
             .then(() => {
-                placedTileIds = []; // Clear the array after successful deletion
+                placedTileIds = [];
                 ui.notifications.info("Hex map cleared.");
             })
             .catch(error => console.error("Error clearing hex map:", error));
@@ -209,6 +383,7 @@ function clearHexMap() {
         ui.notifications.info("No tiles to clear.");
     }
 }
+
 
 //Fog generator functions
 function generateFog() {
