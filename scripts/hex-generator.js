@@ -67,13 +67,13 @@ function createHexInfoBox() {
     hexInfoBox.style.bottom = '120px';
     hexInfoBox.style.left = '50%';
     hexInfoBox.style.width = '70%';
-    hexInfoBox.style.height = "20%";
+    hexInfoBox.style.height = "30%";
     hexInfoBox.style.transform = 'translateX(-50%)';
     hexInfoBox.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
     hexInfoBox.style.color = 'white';
-    hexInfoBox.style.padding = '15px';
+    hexInfoBox.style.padding = '12px';
     hexInfoBox.style.borderRadius = '8px';
-    hexInfoBox.style.fontSize = '16px';
+    hexInfoBox.style.fontSize = '14px';
     hexInfoBox.style.zIndex = '1000000';
     hexInfoBox.style.display = 'none';
     document.body.appendChild(hexInfoBox);
@@ -153,13 +153,18 @@ function handleHexHover(event) {
         console.log(`Humidity: ${hexData.humidity}`);
 
         const hexInfoContent = `
-            <p><strong>Elevation:</strong> ${hexData.elevation}</p>
-            <p><strong>Temperature:</strong> ${hexData.temperature}</p>
-            <p><strong>Precipitation:</strong> ${hexData.precipitation}</p>
-            <p><strong>Wind Intensity:</strong> ${hexData.windIntensity}</p>
-            <p><strong>Biome:</strong> ${hexData.biomeType}</p>
-            <p><strong>Vegetation Density:</strong> ${hexData.vegetationDensity}</p>
-            <p><strong>Humidity:</strong> ${hexData.humidity}</p>
+    <div style="display: flex; flex-wrap: wrap;">
+        <div style="width: 100%;"><strong>ID:</strong> ${hexData.id} x= ${hexData.x} y= ${hexData.y} <strong>Type:</strong> ${hexData.tileType} <strong>Modifier:</strong> ${hexData.tileModifier} <strong>Variant:</strong> ${hexData.Variant}</div>
+        <div style="width: 50%;"><strong>Elevation:</strong> ${hexData.elevation}</div>
+        <div style="width: 50%;"><strong>Temperature:</strong> ${hexData.temperature}</div>
+        <div style="width: 50%;"><strong>Humidity:</strong> ${hexData.humidity}</div>
+        <div style="width: 50%;"><strong>Precipitation:</strong> ${hexData.precipitation}</div>
+        <div style="width: 50%;"><strong>Wind Direction:</strong> ${hexData.windDirection}</div>
+        <div style="width: 50%;"><strong>Wind Intensity:</strong> ${hexData.windIntensity}</div>
+        <div style="width: 50%;"><strong>Vegetation Density:</strong> ${hexData.vegetationDensity}</div>
+        <div style="width: 50%;"><strong>isWater:</strong> ${hexData.isWater}</div>
+        <div style="width: 50%;"><strong>Water Depth:</strong> ${hexData.waterDepth}</div>
+    </div>
         `;
         updateHexInfoBox(hexInfoContent);
     } else {
