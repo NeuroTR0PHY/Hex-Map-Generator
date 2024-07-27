@@ -1,4 +1,4 @@
-﻿Tile Name,Tile Type,Modifier,Variant,Elevation Low,Elevation High,Temperature Low,Temperature High,Precipitation Low,Precipitation High,Wind Low,Wind High
+﻿Tile Name                                    , Tile Type      , Modifier  , Variant      , Elevation Low , Elevation High , Temperature Low , Temperature High , Precipitation Low , Precipitation High , Wind Low , Wind High
 Hex_-_Mountains_peak_(rocky).png              , Mountain       , rocky     , peak         ,9,10,1,3,4,10,4,10
 Hex_-_Snow_(field)_1.png                      , Plains or Base , snowy     , field        ,2,3,1,3,4,10,4,10
 Hex_-_Sparse_Trees_(lush)_2.png               , Sparse trees   , lush      ,              ,3,4,4,7,6,10,1,5

@@ -1,4 +1,4 @@
-﻿//Button controls
+﻿// Button controls
 Hooks.on('getSceneControlButtons', (controls) => {
     console.log('Adding Hex Map Generator button');
     controls.push({
@@ -37,10 +37,109 @@ Hooks.on('getSceneControlButtons', (controls) => {
                 title: "Generate Color Map",
                 icon: "fas fa-paint-brush",
             },
+            {
+                name: "toggleHexInfo",
+                title: "Toggle Hex Info",
+                icon: "fas fa-info-circle",
+            }
         ],
         activeTool: "generate"
     });
 });
+
+let showHexInfo = false;
+
+function createHexInfoBox() {
+    const hexInfoBox = document.createElement('div');
+    hexInfoBox.id = 'hex-info-box';
+    hexInfoBox.style.position = 'fixed';
+    hexInfoBox.style.bottom = '120px'; // Position above the macro bar
+    hexInfoBox.style.left = '50%'; // Center horizontally
+    hexInfoBox.style.width = '70%'; // 70% of the screen width
+    hexInfoBox.style.height = "20%";
+    hexInfoBox.style.transform = 'translateX(-50%)'; // Center the box
+    hexInfoBox.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    hexInfoBox.style.color = 'white';
+    hexInfoBox.style.padding = '15px'; // Increase padding for better readability
+    hexInfoBox.style.borderRadius = '8px';
+    hexInfoBox.style.fontSize = '16px'; // Increase font size
+    hexInfoBox.style.zIndex = '1000'; // Ensure it is above other elements
+    hexInfoBox.style.display = 'none';
+    document.body.appendChild(hexInfoBox);
+    console.log('Hex info box created:', hexInfoBox);
+}
+
+createHexInfoBox();
+
+// Function to update the hex info box content
+function updateHexInfoBox(content) {
+    const hexInfoBox = document.getElementById('hex-info-box');
+    console.log('Updating hex info box content:', content);
+    hexInfoBox.innerHTML = content;
+}
+
+// Function to toggle the display of the hex info box
+function toggleHexInfoBox(show) {
+    const hexInfoBox = document.getElementById('hex-info-box');
+    console.log('Toggling hex info box display:', show);
+    hexInfoBox.style.display = show ? 'block' : 'none';
+}
+
+// Function to handle the hover event
+function handleHexHover(event) {
+    if (!showHexInfo) return;
+
+    const tile = event.data.object;
+    if (!tile || !tile.document || !tile.document.flags) {
+        console.warn('Invalid tile in handleHexHover:', tile);
+        return;
+    }
+
+    const hexId = tile.document.flags.hexId;
+    if (!hexId) {
+        console.warn('No hexId found for tile:', tile);
+        return;
+    }
+
+    const hexGrid = canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
+    const hexData = hexGrid.find(hex => hex.id === parseInt(hexId));
+
+    if (hexData) {
+        const hexInfoContent = `
+            <p><strong>Elevation:</strong> ${hexData.elevation}</p>
+            <p><strong>Temperature:</strong> ${hexData.temperature}</p>
+            <p><strong>Precipitation:</strong> ${hexData.precipitation}</p>
+            <p><strong>Wind Intensity:</strong> ${hexData.windIntensity}</p>
+            <p><strong>Biome:</strong> ${hexData.biomeType}</p>
+            <p><strong>Vegetation Density:</strong> ${hexData.vegetationDensity}</p>
+            <p><strong>Humidity:</strong> ${hexData.humidity}</p>
+        `;
+        updateHexInfoBox(hexInfoContent);
+    } else {
+        console.warn('No hex data found for hexId:', hexId);
+    }
+}
+
+// Add event listeners to the hex tiles
+function addHexHoverListeners() {
+    console.log('Adding hover listeners to hex tiles');
+    const hexTiles = canvas.tiles.placeables.filter(tile => {
+        if (!tile || !tile.document) {
+            console.warn('Encountered invalid tile:', tile);
+            return false;
+        }
+        return tile.document.flags && tile.document.flags.hexTile;
+    });
+    console.log('Found hex tiles:', hexTiles);
+    hexTiles.forEach(tile => {
+        console.log('Adding hover listener to tile:', tile);
+        if (tile.mouseInteractionManager && tile.mouseInteractionManager.callbacks) {
+            tile.mouseInteractionManager.callbacks.over = handleHexHover;
+        } else {
+            console.warn('Tile does not have a valid mouseInteractionManager:', tile);
+        }
+    });
+}
 
 Hooks.on('renderSceneControls', (app, html, data) => {
     console.log('SceneControls rendered');
@@ -74,9 +173,243 @@ Hooks.on('renderSceneControls', (app, html, data) => {
         console.log('Generate Color Map clicked');
         showGenerateNoiseDialog();
     });
+
+    html.find('.control-tool[data-tool="toggleHexInfo"]').click(ev => {
+        showHexInfo = !showHexInfo;
+        toggleHexInfoBox(showHexInfo);
+        if (showHexInfo) {
+            addHexHoverListeners();
+        }
+    });
 });
 
+// Call this function after the hex map is generated
+function updateHexTilesWithIds() {
+    console.log('Updating hex tiles with IDs');
+    const hexGrid = canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
+    console.log('Hex grid data:', hexGrid);
+
+    if (!hexGrid || !Array.isArray(hexGrid)) {
+        console.error('Invalid hexGrid data:', hexGrid);
+        return;
+    }
+
+    console.log('canvas.tiles.placeables:', canvas.tiles.placeables);
+
+    canvas.tiles.placeables.forEach((tile, index) => {
+        if (tile.document.flags.hexTile) {
+            const hex = hexGrid[index];
+            if (hex) {
+                tile.document.updateSource({ flags: { ...tile.document.flags, hexId: hex.id } });
+                console.log(`Assigning hex ID ${hex.id} to tile`, tile);
+            } else {
+                console.error(`No hex data found for tile at index ${index}`);
+            }
+        }
+    });
+}
+class SeededRandom {
+    constructor(seed) {
+        this.seed = seed;
+        this.state = seed;
+    }
+    random() {
+        const x = Math.sin(this.state++) * 10000;
+        return x - Math.floor(x);
+    }
+    setSeed(seed) {
+        this.seed = seed;
+        this.state = seed;
+    }
+}
+
+//// Noise functions ////
+
+class NoiseModule {
+    constructor() {
+        this.random = new SeededRandom(0);
+        this.p = this.initPermutationArray();
+    }
+
+    setSeed(seed) {
+        this.random.setSeed(seed);
+        this.p = this.initPermutationArray();
+    }
+
+    initPermutationArray() {
+        const p = new Array(512);
+        const perm = Array.from({ length: 256 }, (_, i) => i);
+        for (let i = perm.length - 1; i > 0; i--) {
+            const j = Math.floor(this.random.random() * (i + 1));
+            [perm[i], perm[j]] = [perm[j], perm[i]];
+        }
+        for (let i = 0; i < 256; i++) {
+            p[i] = p[i + 256] = perm[i];
+        }
+        return p;
+    }
+
+    fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    lerp(t, a, b) { return a + t * (b - a); }
+
+    grad(hash, x, y, z) {
+        const h = hash & 15;
+        const u = h < 8 ? x : y;
+        const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+        return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    }
+
+    perlin(x, y, z = 0) {
+        const X = Math.floor(x) & 255;
+        const Y = Math.floor(y) & 255;
+        const Z = Math.floor(z) & 255;
+        x -= Math.floor(x);
+        y -= Math.floor(y);
+        z -= Math.floor(z);
+        const u = this.fade(x);
+        const v = this.fade(y);
+        const w = this.fade(z);
+        const A = this.p[X] + Y, B = this.p[X + 1] + Y;
+        const AA = this.p[A] + Z, AB = this.p[A + 1] + Z;
+        const BA = this.p[B] + Z, BB = this.p[B + 1] + Z;
+
+        return this.lerp(w, this.lerp(v, this.lerp(u, this.grad(this.p[AA], x, y, z),
+            this.grad(this.p[BA], x - 1, y, z)),
+            this.lerp(u, this.grad(this.p[AB], x, y - 1, z),
+                this.grad(this.p[BB], x - 1, y - 1, z))),
+            this.lerp(v, this.lerp(u, this.grad(this.p[AA + 1], x, y, z - 1),
+                this.grad(this.p[BA + 1], x - 1, y, z - 1)),
+                this.lerp(u, this.grad(this.p[AB + 1], x, y - 1, z - 1),
+                    this.grad(this.p[BB + 1], x - 1, y - 1, z - 1))));
+    }
+
+    simplex(x, y, z = 0) {
+        const F3 = 1.0 / 3.0;
+        const G3 = 1.0 / 6.0;
+        const s = (x + y + z) * F3;
+        const i = Math.floor(x + s);
+        const j = Math.floor(y + s);
+        const k = Math.floor(z + s);
+        const t = (i + j + k) * G3;
+        const X0 = i - t;
+        const Y0 = j - t;
+        const Z0 = k - t;
+        const x0 = x - X0;
+        const y0 = y - Y0;
+        const z0 = z - Z0;
+
+        let i1, j1, k1;
+        let i2, j2, k2;
+        if (x0 >= y0) {
+            if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+            else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; }
+            else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; }
+        } else {
+            if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; }
+            else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; }
+            else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+        }
+
+        const x1 = x0 - i1 + G3;
+        const y1 = y0 - j1 + G3;
+        const z1 = z0 - k1 + G3;
+        const x2 = x0 - i2 + 2.0 * G3;
+        const y2 = y0 - j2 + 2.0 * G3;
+        const z2 = z0 - k2 + 2.0 * G3;
+        const x3 = x0 - 1.0 + 3.0 * G3;
+        const y3 = y0 - 1.0 + 3.0 * G3;
+        const z3 = z0 - 1.0 + 3.0 * G3;
+
+        const n0 = this.simplexGrad(i, j, k, x0, y0, z0);
+        const n1 = this.simplexGrad(i + i1, j + j1, k + k1, x1, y1, z1);
+        const n2 = this.simplexGrad(i + i2, j + j2, k + k2, x2, y2, z2);
+        const n3 = this.simplexGrad(i + 1, j + 1, k + 1, x3, y3, z3);
+
+        return 32.0 * (n0 + n1 + n2 + n3);
+    }
+
+    simplexGrad(i, j, k, x, y, z) {
+        const t = 0.6 - x * x - y * y - z * z;
+        if (t < 0) return 0;
+        const gi = this.p[(i + this.p[(j + this.p[k & 255]) & 255]) & 255] % 12;
+        return t * t * t * t * this.grad(gi, x, y, z);
+    }
+
+    worley(x, y, z = 0) {
+        const xi = Math.floor(x);
+        const yi = Math.floor(y);
+        const zi = Math.floor(z);
+
+        let closest = 1.0;
+
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const neighbor = [xi + dx, yi + dy, zi + dz];
+                    const point = this.worleyPoint(neighbor[0], neighbor[1], neighbor[2]);
+                    const dist = this.distance([x, y, z], [
+                        neighbor[0] + point[0],
+                        neighbor[1] + point[1],
+                        neighbor[2] + point[2]
+                    ]);
+                    closest = Math.min(closest, dist);
+                }
+            }
+        }
+
+        return closest;
+    }
+
+    worleyPoint(x, y, z) {
+        const n = x + y * 57 + z * 131;
+        const seed = (n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff;
+        return [
+            this.random.random(),
+            this.random.random(),
+            this.random.random()
+        ];
+    }
+
+    distance(a, b) {
+        return Math.sqrt(
+            (a[0] - b[0]) * (a[0] - b[0]) +
+            (a[1] - b[1]) * (a[1] - b[1]) +
+            (a[2] - b[2]) * (a[2] - b[2])
+        );
+    }
+
+    fractal(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5, noiseType = 'perlin') {
+        let amplitude = 1.0;
+        let frequency = 1.0;
+        let total = 0;
+        let maxValue = 0;
+
+        for (let i = 0; i < octaves; i++) {
+            total += amplitude * this[noiseType](x * frequency, y * frequency, z * frequency);
+            maxValue += amplitude;
+            amplitude *= gain;
+            frequency *= lacunarity;
+        }
+
+        return total / maxValue;
+    }
+
+    fractalPerlin(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5) {
+        return this.fractal(x, y, z, octaves, lacunarity, gain, 'perlin');
+    }
+
+    fractalSimplex(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5) {
+        return this.fractal(x, y, z, octaves, lacunarity, gain, 'simplex');
+    }
+
+    fractalWorley(x, y, z = 0, octaves = 6, lacunarity = 2, gain = 0.5) {
+        return this.fractal(x, y, z, octaves, lacunarity, gain, 'worley');
+    }
+}
+
+
 //Hex map tile generator functions
+// date the showHexMapDialog function to include a seed input
 async function showHexMapDialog() {
     const content = await renderTemplate("modules/procedural-hex-maps/templates/template.html", {});
     new Dialog({
@@ -99,115 +432,224 @@ async function showHexMapDialog() {
     }).render(true);
 }
 
+placedTileIds = [];
+
 // Hex data structure
-    class HexData {
-        constructor(id, x, y) {
-            this.id = id;
-            this.x = x;
-            this.y = y;
-            this.row = 0;
+class HexData {
+    constructor(id, x, y, col, row) {
+        this.id = id;
+        this.x = x;
+        this.y = y;
+        this.col = col;
+        this.row = row;
+        this.staggeredRow = 0;
 
-            // Terrain characteristics
-            this.elevation = 0;
-            this.humidity = 0;
-            this.temperature = 0;
-            this.precipitation = 0;
-            this.windSpeed = 0;
-            this.windDirection = 0;
+        // Base environmental characteristics
+        this.baseElevation = 0;
+        this.basePrecipitation = 0;
+        this.baseTemperature = 0;
+        this.baseWindIntensity = 0;
 
-            // Biome and vegetation
-            this.biomeType = '';
-            this.vegetationType = '';
-            this.vegetationDensity = 0;
+        // Current environmental characteristics (can be modified in real-time)
+        this.elevation = 0;
+        this.precipitation = 0;
+        this.temperature = 0;
+        this.windIntensity = 0;
 
-            // Water features
-            this.isWater = false;
-            this.waterDepth = 0;
-            this.isCoastal = false;
-            this.riverSize = 0;
+        // Terrain characteristics
+        this.humidity = 0;
+        this.windDirection = 0;
 
-            // Resources and features
-            this.resources = [];
-            this.landmarks = [];
+        // Biome and vegetation
+        this.biomeType = '';
+        this.vegetationType = '';
+        this.vegetationDensity = 0;
 
-            // Civilization and development
-            this.owner = '';
-            this.population = 0;
-            this.developmentLevel = 0;
-            this.buildingType = '';
+        // Water features
+        this.isWater = false;
+        this.waterDepth = 0;
+        this.isCoastal = false;
+        this.riverSize = 0;
 
-            // Game mechanics
-            this.movementCost = 1;
-            this.defensebonus = 0;
-            this.visibilityRange = 1;
+        // Resources and features
+        this.resources = [];
+        this.landmarks = [];
 
-            // Environmental conditions
-            this.pollutionLevel = 0;
-            this.radiationLevel = 0;
+        // Civilization and development
+        this.owner = '';
+        this.population = 0;
+        this.developmentLevel = 0;
+        this.buildingType = '';
 
-            // Time-based properties
-            this.seasonalEffects = {};
-            this.weatherCondition = '';
+        // Game mechanics
+        this.movementCost = 1;
+        this.defensebonus = 0;
+        this.visibilityRange = 1;
 
-            // Fog of war
-            this.isExplored = false;
-            this.lastExploredTurn = -1;
+        // Environmental conditions
+        this.pollutionLevel = 0;
+        this.radiationLevel = 0;
 
-            // New properties for encounters, items, and notes
-            this.potentialEnemies = [];
-            this.items = [];
-            this.notes = '';
+        // Time-based properties
+        this.seasonalEffects = {};
+        this.weatherCondition = '';
 
-            // Custom properties
-            this.customProperties = {};
+        // Fog of war
+        this.isExplored = false;
+        this.lastExploredTurn = -1;
 
+        // Enemies, items, and notes
+        this.potentialEnemies = [];
+        this.items = [];
+        this.notes = '';
 
-        }
+        // Tile information
+        this.tileType = '';
+        this.tileModifier = '';
+        this.tileVariant = '';
 
-        setRow(row) {
-            this.row = row;
-        }
+        // Simulation history
+        this.simulationHistory = [];
 
-        // Methods for managing potential enemies
-        addPotentialEnemy(enemy) {
-            this.potentialEnemies.push(enemy);
-        }
+        // Custom properties
+        this.customProperties = {};
+    }
 
-        removePotentialEnemy(enemyId) {
-            this.potentialEnemies = this.potentialEnemies.filter(e => e.id !== enemyId);
-        }
+    setStaggeredRow(staggeredRow) {
+        this.staggeredRow = staggeredRow;
+    }
 
-        // Methods for managing items
-        addItem(item) {
-            this.items.push(item);
-        }
+    determineTile(tileMapping) {
+        console.log('determineTile called');
+        console.log('tileMapping:', tileMapping);
+        console.log('this:', {
+            elevation: this.elevation,
+            temperature: this.temperature,
+            precipitation: this.precipitation,
+            windIntensity: this.windIntensity
+        });
+        const matchingTiles = tileMapping.filter(tile =>
+            this.elevation >= tile.elevationLow && this.elevation <= tile.elevationHigh &&
+            this.temperature >= tile.temperatureLow && this.temperature <= tile.temperatureHigh &&
+            this.precipitation >= tile.precipitationLow && this.precipitation <= tile.precipitationHigh &&
+            this.windIntensity >= tile.windLow && this.windIntensity <= tile.windHigh
+        );
 
-        removeItem(itemId) {
-            this.items = this.items.filter(i => i.id !== itemId);
-        }
-
-        // Method to update notes
-        updateNotes(newNotes) {
-            this.notes = newNotes;
-        }
-
-        calculateMovementCost() {
-            let cost = this.movementCost;
-            if (this.elevation > 0.7) cost *= 2;
-            if (this.isWater) cost *= this.waterDepth > 2 ? 3 : 1.5;
-            return cost;
-        }
-
-        updateSeasonalEffects(currentSeason) {
-            this.temperature += this.seasonalEffects[currentSeason]?.temperature || 0;
-            this.precipitation += this.seasonalEffects[currentSeason]?.precipitation || 0;
+        if (matchingTiles.length > 0) {
+            const selectedTile = matchingTiles[Math.floor(Math.random() * matchingTiles.length)];
+            this.tileType = selectedTile.tileType;
+            this.tileModifier = selectedTile.modifier;
+            this.tileVariant = selectedTile.variant;
+        } else {
+            console.warn(`No matching tile found for hex ${this.id}. Using default tile.`);
+            this.tileType = 'Base';
+            this.tileModifier = 'blank';
+            this.tileVariant = '';
         }
     }
 
+    updateEnvironment(elevationMod = 0, precipitationMod = 0, temperatureMod = 0, windMod = 0) {
+        this.elevation = Math.max(1, Math.min(10, this.baseElevation + elevationMod));
+        this.precipitation = Math.max(1, Math.min(10, this.basePrecipitation + precipitationMod));
+        this.temperature = Math.max(1, Math.min(10, this.baseTemperature + temperatureMod));
+        this.windIntensity = Math.max(1, Math.min(10, this.baseWindIntensity + windMod));
+        this.isWater = this.elevation <= 2; // Assuming water level is 2
+
+        this.updateDerivedCharacteristics();
+    }
+
+    updateDerivedCharacteristics() {
+        this.humidity = (this.precipitation * 2 + (10 - this.temperature)) / 3;
+        this.vegetationDensity = (this.precipitation + this.temperature - this.elevation / 2) / 2;
+        if (this.isWater) this.vegetationDensity = 0;
+        this.determineBiomeType();
+        this.updateMovementCost();
+    }
+
+    determineBiomeType() {
+        if (this.isWater) {
+            this.biomeType = this.elevation === 1 ? 'ocean' : 'lake';
+        } else if (this.elevation > 8) {
+            this.biomeType = 'mountain';
+        } else if (this.temperature < 3) {
+            this.biomeType = 'tundra';
+        } else if (this.precipitation < 3) {
+            this.biomeType = 'desert';
+        } else if (this.temperature > 7 && this.precipitation > 7) {
+            this.biomeType = 'tropical rainforest';
+        } else if (this.temperature > 7) {
+            this.biomeType = 'savanna';
+        } else if (this.precipitation > 7) {
+            this.biomeType = 'temperate rainforest';
+        } else {
+            this.biomeType = 'temperate forest';
+        }
+    }
+
+    updateMovementCost() {
+        this.movementCost = 1; // Base cost
+        if (this.isWater) this.movementCost = this.waterDepth > 1 ? 2 : 1.5;
+        else if (this.elevation > 8) this.movementCost = 3;
+        else if (this.elevation > 6) this.movementCost = 2;
+        else if (this.vegetationDensity > 7) this.movementCost = 1.5;
+    }
+
+    addPotentialEnemy(enemy) {
+        this.potentialEnemies.push(enemy);
+    }
+
+    removePotentialEnemy(enemyId) {
+        this.potentialEnemies = this.potentialEnemies.filter(e => e.id !== enemyId);
+    }
+
+    addItem(item) {
+        this.items.push(item);
+    }
+
+    removeItem(itemId) {
+        this.items = this.items.filter(i => i.id !== itemId);
+    }
+
+    updateNotes(newNotes) {
+        this.notes = newNotes;
+    }
+
+    recordSimulation(simulationName) {
+        this.simulationHistory.push({
+            name: simulationName,
+            timestamp: Date.now(),
+            elevation: this.elevation,
+            precipitation: this.precipitation,
+            temperature: this.temperature,
+            windIntensity: this.windIntensity,
+            humidity: this.humidity,
+            biomeType: this.biomeType,
+            vegetationDensity: this.vegetationDensity,
+            isWater: this.isWater,
+            movementCost: this.movementCost,
+            tileType: this.tileType,
+            tileModifier: this.tileModifier,
+            tileVariant: this.tileVariant
+        });
+    }
+
+    getSimulationResult(simulationName) {
+        return this.simulationHistory.find(sim => sim.name === simulationName);
+    }
+
+    setCustomProperty(key, value) {
+        this.customProperties[key] = value;
+    }
+
+    getCustomProperty(key) {
+        return this.customProperties[key];
+    }
+}
+
 // Function to create hex grid data
-function createHexGridData(width, height, hexSize) {
+function createHexGridData(width, height, hexSize, noiseModule, tileMapping, seed) {
     const hexGrid = [];
-    const hexWidth = hexSize + 11;
+    const hexWidth = hexSize + 10;
     const hexHeight = hexSize;
     const horizontalSpacing = hexWidth * 3 / 4;
     const verticalSpacing = hexHeight;
@@ -215,30 +657,32 @@ function createHexGridData(width, height, hexSize) {
     const columns = Math.ceil(width / horizontalSpacing);
     const rows = Math.ceil(height / hexHeight);
 
+    const random = new SeededRandom(seed);
+
     let id = 1;
     for (let col = 0; col < columns; col++) {
         for (let row = 0; row < rows; row++) {
             const x = col * horizontalSpacing;
             const y = row * verticalSpacing + (col % 2) * (hexHeight / 2);
 
-            // Calculate the center of the hex
-            const centerX = x + (hexWidth+10) / 2;
+            const centerX = x + (hexWidth + 10) / 2;
             const centerY = y + hexHeight / 2;
 
             if (centerX < width && centerY < height) {
-                // Calculate the staggered row number
-                let staggeredRow;
-                if (col % 2 === 0) {
-                    // Even columns
-                    staggeredRow = row * 2 + 1;
-                } else {
-                    // Odd columns
-                    staggeredRow = row * 2 + 2;
-                }
+                let staggeredRow = (col % 2 === 0) ? row * 2 + 1 : row * 2 + 2;
 
-                // Create HexData object and set its row
-                const hexData = new HexData(id, centerX, centerY);
-                hexData.setRow(staggeredRow);
+                const hexData = new HexData(id, centerX, centerY, col, row);
+                hexData.setStaggeredRow(staggeredRow);
+
+                hexData.baseElevation = generateElevation(noiseModule, col, row);
+                hexData.basePrecipitation = generatePrecipitation(noiseModule, col, row);
+                hexData.baseTemperature = generateTemperature(noiseModule, col, row);
+                hexData.baseWindIntensity = generateWindIntensity(noiseModule, col, row);
+
+                hexData.updateEnvironment();
+                hexData.determineTile(tileMapping);
+                hexData.recordSimulation('initial');
+
                 hexGrid.push(hexData);
                 id++;
             }
@@ -248,46 +692,64 @@ function createHexGridData(width, height, hexSize) {
     return hexGrid;
 }
 
-placedTileIds = [];
 // Updated generateHexMap function with row-based z-index
 async function generateHexMap(html) {
     const width = canvas.dimensions.width;
     const height = canvas.dimensions.height;
     const hexSize = parseInt(html.find('input[name="hex-size"]').val()) || canvas.grid.size;
-    const terrainType = html.find('select[name="terrain-type"]').val() || 'mixed';
+    const seed = parseInt(html.find('input[name="seed"]').val()) || Math.floor(Math.random() * 1000000);
 
-    console.log(`Generating hex map: ${width}x${height}, hex size: ${hexSize}, terrain: ${terrainType}`);
+    console.log(`Generating hex map: ${width}x${height}, hex size: ${hexSize}, seed: ${seed}`);
 
-    const hexGrid = createHexGridData(width, height, hexSize);
+    const noiseModule = new NoiseModule();
+    noiseModule.setSeed(seed);
+
+    let tileMapping;
+    try {
+        tileMapping = await loadTileMapping();
+        console.log('Loaded tileMapping:', tileMapping);
+    } catch (error) {
+        console.error("Error loading tile mapping:", error);
+        ui.notifications.error("Failed to load tile mapping. Check the console for details.");
+        return;
+    }
+
+    if (!tileMapping || !Array.isArray(tileMapping) || tileMapping.length === 0) {
+        console.error("Invalid tileMapping:", tileMapping);
+        ui.notifications.error("Invalid tile mapping data. Check the console for details.");
+        return;
+    }
+
+    const hexGrid = createHexGridData(width, height, hexSize, noiseModule, tileMapping, seed);
+
 
     let placedTiles = hexGrid.map(hex => ({
-        x: hex.x - (hexSize+10) / 2,  // Adjust x to top-left corner
-        y: hex.y - hexSize / 2,  // Adjust y to top-left corner
-        width: hexSize+10,
+        x: hex.x - (hexSize + 10) / 2,
+        y: hex.y - hexSize / 2,
+        width: hexSize + 10,
         height: hexSize,
         rotation: 0,
-        sort: hex.row, // Use the row number as the z-index (sort value)
-        flags: { isHexTile: true, hexId: hex.id }
+        sort: hex.staggeredRow,
+        flags: { hexTile: true, hexId: hex.id },
+        hexData: hex // Store the entire hex data object
     }));
 
     console.log('Total tiles to place:', placedTiles.length);
 
     const tileFolder = "modules/procedural-hex-maps/tiles";
-    const tileImages = await fetchTileImages(tileFolder);
-    if (tileImages.length === 0) {
-        ui.notifications.warn("No tiles found in the specified directory.");
-        return;
-    }
-
-    const filteredImages = terrainType === 'mixed' ? tileImages : tileImages.filter(img => img.toLowerCase().includes(terrainType.toLowerCase()));
-
     let createdTiles = await canvas.scene.createEmbeddedDocuments("Tile", placedTiles);
     placedTileIds = createdTiles.map(tile => tile.id);
 
-    let updateData = createdTiles.map(tile => {
-        const tileImage = filteredImages[Math.floor(Math.random() * filteredImages.length)];
-        const texturePath = `${tileFolder}/${tileImage}`;
+    // Update the tiles to ensure flags are set
+    await canvas.scene.updateEmbeddedDocuments("Tile", createdTiles.map(tile => ({
+        _id: tile.id,
+        flags: { hexTile: true, hexId: tile.flags.hexId }
+    })));
 
+    let updateData = createdTiles.map((tile, index) => {
+        const hex = tile.flags.hexData || hexGrid[index]; // Use stored hex data or fall back to hexGrid
+        const texturePath = `${tileFolder}/${getTileImage(hex, tileMapping)}`;
+        console.log(`Updating tile with path: ${texturePath}`);
         return {
             _id: tile.id,
             texture: {
@@ -297,7 +759,8 @@ async function generateHexMap(html) {
                 offsetX: 0,
                 offsetY: 0
             },
-            sort: tile.sort // Ensure the z-index is set in the update as well
+            sort: tile.sort,
+            flags: { ...tile.flags, hexId: hex.id } // Ensure hexId is set in flags
         };
     });
 
@@ -306,30 +769,59 @@ async function generateHexMap(html) {
         console.log('All tiles placed and images assigned');
     } catch (error) {
         console.error("Error updating tile textures:", error);
+        ui.notifications.error("Failed to update some tile textures. Check the console for details.");
     }
 
-    // HexData objects are already created in createHexGridData
     await canvas.scene.setFlag("procedural-hex-maps", "hexGridData", hexGrid);
+    await updateHexTilesWithIds(); 
+
+    //  a delay to ensure the tiles are rendered before adding hover listeners
+    setTimeout(() => {
+        addHexHoverListeners();
+        console.log('Hex hover listeners added');
+    }, 1000);
 }
 
-
 // Function to update the display of a hex's data
+async function updateHexMap(elevationMod = 0, precipitationMod = 0, temperatureMod = 0, windMod = 0, simulationName = 'update') {
+    const hexGrid = await canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
+    const tileMapping = await loadTileMapping();
+
+    hexGrid.forEach(hex => {
+        hex.updateEnvironment(elevationMod, precipitationMod, temperatureMod, windMod);
+        hex.determineTile(tileMapping);
+        hex.recordSimulation(simulationName);
+    });
+
+    const updatedTiles = hexGrid.map(hex => ({
+        _id: placedTileIds[hex.id - 1],
+        texture: {
+            src: `modules/procedural-hex-maps/tiles/${getTileImage(hex)}`
+        }
+    }));
+
+    await canvas.scene.updateEmbeddedDocuments("Tile", updatedTiles);
+    await canvas.scene.setFlag("procedural-hex-maps", "hexGridData", hexGrid);
+
+    console.log(`Hex map updated with simulation: ${simulationName}`);
+}
+
 function updateHexDisplay(hexId) {
     const hexGrid = canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
     const hexData = hexGrid.find(hex => hex.id === hexId);
 
-    const enemyList = document.getElementById(`hex-${hexId}-enemy-list`);
-    enemyList.innerHTML = hexData.potentialEnemies.map(enemy =>
-        `<div class="potential-enemy">${enemy.name}</div>`
-    ).join('');
+    const hexElement = document.getElementById(`hex-${hexId}`);
+    if (!hexElement) return;
 
-    const itemList = document.getElementById(`hex-${hexId}-item-list`);
-    itemList.innerHTML = hexData.items.map(item =>
-        `<div class="hex-item">${item.name}</div>`
-    ).join('');
-
-    const notesField = document.getElementById(`hex-${hexId}-notes`);
-    notesField.value = hexData.notes;
+    // Update display elements based on hexData
+    // This is a basic example, adjust according to your UI needs
+    hexElement.innerHTML = `
+        <p>Elevation: ${hexData.elevation}</p>
+        <p>Temperature: ${hexData.temperature}</p>
+        <p>Precipitation: ${hexData.precipitation}</p>
+        <p>Wind Intensity: ${hexData.windIntensity}</p>
+        <p>Biome: ${hexData.biomeType}</p>
+    `;
 }
 
 // Function to create the UI for a hex
@@ -345,7 +837,7 @@ function createHexUI(hexId) {
         <textarea id="hex-${hexId}-notes" placeholder="Enter notes here..."></textarea>
     `;
 
-    setupHexDragDrop(hexId);
+    //setupHexDragDrop(hexId);
     updateHexDisplay(hexId);
 
     const notesField = document.getElementById(`hex-${hexId}-notes`);
@@ -357,18 +849,102 @@ function createHexUI(hexId) {
     });
 }
 
-// Existing helper functions
-async function fetchTileImages(folderPath) {
-    try {
-        const response = await fetch(`${folderPath}/images.json`);
-        if (!response.ok) throw new Error("Network response was not ok");
-        const data = await response.json();
-        return data.tiles || [];
-    } catch (error) {
-        console.error("Error fetching tile images:", error);
-        return [];
+// Helper function to get tile image
+function getTileImage(hex, tileMapping) {
+    if (!hex || !tileMapping || !Array.isArray(tileMapping) || tileMapping.length === 0) {
+        console.error("Invalid hex or tileMapping data");
+        return 'Hex_-_Base_(blank).png';
+    }
+
+    const matchingTiles = tileMapping.filter(tile =>
+        hex.elevation >= tile.elevationLow && hex.elevation <= tile.elevationHigh &&
+        hex.temperature >= tile.temperatureLow && hex.temperature <= tile.temperatureHigh &&
+        hex.precipitation >= tile.precipitationLow && hex.precipitation <= tile.precipitationHigh &&
+        hex.windIntensity >= tile.windLow && hex.windIntensity <= tile.windHigh
+    );
+
+    if (matchingTiles.length > 0) {
+        const selectedTile = matchingTiles[Math.floor(Math.random() * matchingTiles.length)];
+        const tilePath = `${selectedTile.fullTileName}`;
+        console.log(`Matched tile for hex ${hex.id}:`, tilePath);
+        return tilePath;
+    } else {
+        console.warn(`No matching tile found for hex ${hex.id}. Using default tile.`);
+        return 'Hex_-_Base_(blank).png';
     }
 }
+
+// Function to retrieve simulation results
+function getSimulationResults(simulationName) {
+    const hexGrid = canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
+    return hexGrid.map(hex => hex.getSimulationResult(simulationName));
+}
+
+// Helper functions for generating environmental characteristics
+function generateElevation(noiseModule, col, row) {
+    const elevationNoise = noiseModule.fractalPerlin(col * 0.1, row * 0.1, 0, 6, 2, 0.5);
+    return Math.floor(normalizeValue(elevationNoise, -1, 1, 1, 10));
+}
+
+function generatePrecipitation(noiseModule, col, row) {
+    const baseNoise = noiseModule.fractalPerlin(col * 0.08, row * 0.08, 100, 4, 2, 0.5);
+    return Math.floor(normalizeValue(baseNoise, -1, 1, 1, 10));
+}
+
+function generateTemperature(noiseModule, col, row) {
+    const baseNoise = noiseModule.fractalPerlin(col * 0.12, row * 0.12, 200, 4, 2, 0.5);
+    return Math.floor(normalizeValue(baseNoise, -1, 1, 1, 10));
+}
+
+function generateWindIntensity(noiseModule, col, row) {
+    const baseNoise = noiseModule.fractalPerlin(col * 0.06, row * 0.06, 300, 4, 2, 0.5);
+    return Math.floor(normalizeValue(baseNoise, -1, 1, 1, 10));
+}
+
+// Function to load tile mapping from CSV
+async function loadTileMapping() {
+    try {
+        const response = await fetch('modules/procedural-hex-maps/TileMapping.csv');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const text = await response.text();
+        console.log('TileMapping CSV loaded:', text);
+
+        // Split the text into lines and remove the header
+        const lines = text.split('\n').slice(1);
+
+        // Parse each line into an object
+        const tileMapping = lines.map(line => {
+            const [fullTileName, tileType, modifier, variant, elevationLow, elevationHigh, temperatureLow, temperatureHigh, precipitationLow, precipitationHigh, windLow, windHigh] = line.split(',').map(field => field.trim());
+
+            const tileData = {
+                fullTileName, // Keep the full tile name including the number
+                tileType: tileType.replace(/ /g, '_'),
+                modifier: modifier.replace(/ /g, '_'),
+                variant: variant.replace(/ /g, '_'),
+                elevationLow: parseInt(elevationLow),
+                elevationHigh: parseInt(elevationHigh),
+                temperatureLow: parseInt(temperatureLow),
+                temperatureHigh: parseInt(temperatureHigh),
+                precipitationLow: parseInt(precipitationLow),
+                precipitationHigh: parseInt(precipitationHigh),
+                windLow: parseInt(windLow),
+                windHigh: parseInt(windHigh)
+            };
+
+            console.log('Processed tile data:', tileData);
+            return tileData;
+        });
+
+        console.log('Processed tileMapping:', tileMapping);
+        return tileMapping;
+    } catch (error) {
+        console.error("Error loading tile mapping:", error);
+        throw error;
+    }
+}
+
 
 function clearHexMap() {
     console.log('Clearing Hex Map');
@@ -385,7 +961,7 @@ function clearHexMap() {
 }
 
 
-//Fog generator functions
+////Fog generator functions////
 function generateFog() {
     new Dialog({
         title: "Generate Fog",
@@ -631,7 +1207,7 @@ function removeFog() {
     }
 }
 
-//Background painting functions
+////Background painting functions///
 async function showGenerateNoiseDialog() {
     const content = `
         <p>Enter a seed value for noise generation:</p>
@@ -828,3 +1404,10 @@ function interpolateColor(color1, color2, t) {
         b: Math.round(color1.b + (color2.b - color1.b) * t)
     };
 }
+
+function normalizeValue(value, min, max, newMin, newMax) {
+    return ((value - min) / (max - min)) * (newMax - newMin) + newMin;
+}
+    
+
+
