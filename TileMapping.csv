@@ -34,7 +34,7 @@ Hex_-_Urban_-_Modern_Town_inhabited_(lush)_2.png,Urban,Lush,Modern Town,2,4,4,8,
 Hex_-_Forest_conifer_(lush).png,Forest,Lush,Conifer,4,6,4,7,6,10,1,5,0
 Hex_-_Plains_(lush)_4.png,Plains,Lush,,2,4,4,8,5,9,1,7,0
 Hex_-_Plains_(lush)_5.png,Plains,Lush,,2,4,4,8,5,9,1,7,0
-Hex_-_Ruin_(desert).png,Urban,Desert,Ruin,2,6,7,10,1,3,4,10,0
+Hex_-_Ruin_(desert).png,Urban,Desert,Ruin,2,6,7,10,1,3,4,10,1
 Hex_-_Base_(ocean).png,Base,Ocean,,1,2,3,8,8,10,1,10,0
 Hex_-_Urban_-_City_(lush).png,Urban,Lush,City,2,4,4,8,5,9,1,5,1
 Hex_-_Water_-_Swamp_(still_water)_1.png,Water,Swamp,Still Water,2,3,5,10,8,10,1,4,0
@@ -58,7 +58,7 @@ Hex_-_Hills_(desert)_3b.png,Hills,Desert,,5,7,7,10,1,3,4,10,0
 Hex_-_Urban_-_Modern_Town_abandoned_(lush)_1.png,Urban,Lush,Modern Town,2,4,4,8,5,9,1,5,1
 Hex_-_Urban_-_Farmland_(lush)_2.png,Urban,Lush,Farmland,2,4,4,8,5,9,1,5,1
 Hex_-_Hills_(lush)_3.png,Hills,Lush,,5,7,4,8,5,9,1,7,0
-Hex_-_Ruin_(lush).png,Urban,Lush,Ruin,2,6,4,8,5,9,1,7,0
+Hex_-_Ruin_(lush).png,Urban,Lush,Ruin,2,6,4,8,5,9,1,7,1
 Hex_-_Hills_(lush)_2.png,Hills,Lush,,5,7,4,8,5,9,1,7,0
 Hex_-_Urban_-_Farmland_(lush)_3.png,Urban,Lush,Farmland,2,4,4,8,5,9,1,5,1
 Hex_-_Snow_(drifts)_1.png,Plains,Snowy,Drifts,2,4,1,3,4,10,6,10,0

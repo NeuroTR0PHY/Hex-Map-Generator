@@ -1,4 +1,10 @@
-﻿// Button controls
+﻿let hexInfoBoxCreated = false;
+
+Hooks.once('ready', () => {
+    createHexInfoBox();
+});
+
+// Button controls
 Hooks.on('getSceneControlButtons', (controls) => {
     console.log('Adding Hex Map Generator button');
     controls.push({
@@ -50,53 +56,72 @@ Hooks.on('getSceneControlButtons', (controls) => {
 let showHexInfo = false;
 
 function createHexInfoBox() {
+    if (hexInfoBoxCreated) {
+        console.log('Hex info box already exists');
+        return;
+    }
+
     const hexInfoBox = document.createElement('div');
     hexInfoBox.id = 'hex-info-box';
     hexInfoBox.style.position = 'fixed';
-    hexInfoBox.style.bottom = '120px'; // Position above the macro bar
-    hexInfoBox.style.left = '50%'; // Center horizontally
-    hexInfoBox.style.width = '70%'; // 70% of the screen width
+    hexInfoBox.style.bottom = '120px';
+    hexInfoBox.style.left = '50%';
+    hexInfoBox.style.width = '70%';
     hexInfoBox.style.height = "20%";
-    hexInfoBox.style.transform = 'translateX(-50%)'; // Center the box
+    hexInfoBox.style.transform = 'translateX(-50%)';
     hexInfoBox.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
     hexInfoBox.style.color = 'white';
-    hexInfoBox.style.padding = '15px'; // Increase padding for better readability
+    hexInfoBox.style.padding = '15px';
     hexInfoBox.style.borderRadius = '8px';
-    hexInfoBox.style.fontSize = '16px'; // Increase font size
-    hexInfoBox.style.zIndex = '1000'; // Ensure it is above other elements
+    hexInfoBox.style.fontSize = '16px';
+    hexInfoBox.style.zIndex = '1000000';
     hexInfoBox.style.display = 'none';
     document.body.appendChild(hexInfoBox);
     console.log('Hex info box created:', hexInfoBox);
+
+    hexInfoBoxCreated = true;
 }
 
-createHexInfoBox();
+//createHexInfoBox();
 
 // Function to update the hex info box content
 function updateHexInfoBox(content) {
+    if (!showHexInfo) {
+        console.log('Hex info is toggled off, not updating box');
+        return;
+    }
     const hexInfoBox = document.getElementById('hex-info-box');
     console.log('Updating hex info box content:', content);
+    console.log('Hex info box element:', hexInfoBox);
     hexInfoBox.innerHTML = content;
     hexInfoBox.style.display = content ? 'block' : 'none';
+    console.log('Hex info box display style:', hexInfoBox.style.display);
 }
 
 // Function to toggle the display of the hex info box
 function toggleHexInfoBox(show) {
     const hexInfoBox = document.getElementById('hex-info-box');
+    if (!hexInfoBox) {
+        console.error('Hex info box not found');
+        return;
+    }
     console.log('Toggling hex info box display:', show);
     hexInfoBox.style.display = show ? 'block' : 'none';
+    if (!show) {
+        hexInfoBox.innerHTML = ''; // Clear content when hiding
+    }
 }
 
 // Function to handle the hover event
 function handleHexHover(event) {
-    if (!showHexInfo) return;
+    console.log('Hover event triggered');
 
-    const tile = event.data.object;
-    if (!tile || !tile.document || !tile.document.flags) {
-        console.warn('Invalid tile in handleHexHover:', tile);
-        return;
-    }
+    const tile = event.currentTarget;
+    console.log('Hovering over tile:', tile);
 
     const hexId = tile.document.flags.hexId;
+    console.log('Hex ID:', hexId);
+
     if (!hexId) {
         console.warn('No hexId found for tile:', tile);
         return;
@@ -105,10 +130,28 @@ function handleHexHover(event) {
     console.log('Hovering over hex:', hexId);
 
     const hexGrid = canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
+    if (!hexGrid) {
+        console.warn('No hex grid data found in scene flags');
+        return;
+    }
+
+    console.log('Hex grid data:', hexGrid);
+
     const hexData = hexGrid.find(hex => hex.id === parseInt(hexId));
 
     if (hexData) {
         console.log('Hex data found:', hexData);
+
+        // Log the hex data to the console
+        console.log(`Hex ${hexId} Data:`);
+        console.log(`Elevation: ${hexData.elevation}`);
+        console.log(`Temperature: ${hexData.temperature}`);
+        console.log(`Precipitation: ${hexData.precipitation}`);
+        console.log(`Wind Intensity: ${hexData.windIntensity}`);
+        console.log(`Biome: ${hexData.biomeType}`);
+        console.log(`Vegetation Density: ${hexData.vegetationDensity}`);
+        console.log(`Humidity: ${hexData.humidity}`);
+
         const hexInfoContent = `
             <p><strong>Elevation:</strong> ${hexData.elevation}</p>
             <p><strong>Temperature:</strong> ${hexData.temperature}</p>
@@ -126,22 +169,18 @@ function handleHexHover(event) {
 
 // Add event listeners to the hex tiles
 function addHexHoverListeners() {
-    console.log('Adding hover listeners to hex tiles');
-    const hexTiles = canvas.tiles.placeables.filter(tile => {
-        if (!tile || !tile.document) {
-            console.warn('Encountered invalid tile:', tile);
-            return false;
-        }
-        return tile.document.flags && tile.document.flags.hexTile;
-    });
+    console.log('Adding or removing hover listeners based on showHexInfo:', showHexInfo);
+    const hexTiles = canvas.tiles.placeables.filter(tile => tile.document.flags && tile.document.flags.hexTile);
     console.log('Found hex tiles:', hexTiles.length);
     hexTiles.forEach(tile => {
-        console.log('Adding hover listener to tile:', tile.id);
-        if (tile.mouseInteractionManager && tile.mouseInteractionManager.callbacks) {
-            tile.mouseInteractionManager.callbacks.hover = handleHexHover;
-            tile.mouseInteractionManager.callbacks.out = handleHexHoverOut;
+        if (showHexInfo) {
+            console.log('Adding hover listener to tile:', tile.id);
+            tile.on('pointerover', handleHexHover);
+            tile.on('pointerout', handleHexHoverOut);
         } else {
-            console.warn('Tile does not have a valid mouseInteractionManager:', tile);
+            console.log('Removing hover listener from tile:', tile.id);
+            tile.off('pointerover', handleHexHover);
+            tile.off('pointerout', handleHexHoverOut);
         }
     });
 }
@@ -185,9 +224,11 @@ Hooks.on('renderSceneControls', (app, html, data) => {
 
     html.find('.control-tool[data-tool="toggleHexInfo"]').click(ev => {
         showHexInfo = !showHexInfo;
+        console.log('showHexInfo toggled:', showHexInfo);
         toggleHexInfoBox(showHexInfo);
-        if (showHexInfo) {
-            addHexHoverListeners();
+        addHexHoverListeners();
+        if (!showHexInfo) {
+            updateHexInfoBox(''); // Clear the content when hiding
         }
     });
 });
