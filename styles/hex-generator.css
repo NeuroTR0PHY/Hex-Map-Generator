@@ -6,3 +6,15 @@ li[data-control="hexmap"] i {
 #tools-panel-hexmap .control-tool:hover {
     box-shadow: 0 0 5px #7bf542; /* Example: add a green glow on hover */
 }
+
+#hover-info-box {
+    position: fixed;
+    color: red;
+    font-size: 14px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid red;
+    padding: 2px 5px;
+    pointer-events: none;
+    z-index: 10000;
+    display: none;
+}
