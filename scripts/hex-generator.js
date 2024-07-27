@@ -76,6 +76,7 @@ function updateHexInfoBox(content) {
     const hexInfoBox = document.getElementById('hex-info-box');
     console.log('Updating hex info box content:', content);
     hexInfoBox.innerHTML = content;
+    hexInfoBox.style.display = content ? 'block' : 'none';
 }
 
 // Function to toggle the display of the hex info box
@@ -101,10 +102,13 @@ function handleHexHover(event) {
         return;
     }
 
+    console.log('Hovering over hex:', hexId);
+
     const hexGrid = canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
     const hexData = hexGrid.find(hex => hex.id === parseInt(hexId));
 
     if (hexData) {
+        console.log('Hex data found:', hexData);
         const hexInfoContent = `
             <p><strong>Elevation:</strong> ${hexData.elevation}</p>
             <p><strong>Temperature:</strong> ${hexData.temperature}</p>
@@ -130,15 +134,20 @@ function addHexHoverListeners() {
         }
         return tile.document.flags && tile.document.flags.hexTile;
     });
-    console.log('Found hex tiles:', hexTiles);
+    console.log('Found hex tiles:', hexTiles.length);
     hexTiles.forEach(tile => {
-        console.log('Adding hover listener to tile:', tile);
+        console.log('Adding hover listener to tile:', tile.id);
         if (tile.mouseInteractionManager && tile.mouseInteractionManager.callbacks) {
-            tile.mouseInteractionManager.callbacks.over = handleHexHover;
+            tile.mouseInteractionManager.callbacks.hover = handleHexHover;
+            tile.mouseInteractionManager.callbacks.out = handleHexHoverOut;
         } else {
             console.warn('Tile does not have a valid mouseInteractionManager:', tile);
         }
     });
+}
+
+function handleHexHoverOut(event) {
+    updateHexInfoBox('');
 }
 
 Hooks.on('renderSceneControls', (app, html, data) => {
@@ -521,25 +530,28 @@ class HexData {
 
     determineTile(tileMapping) {
         console.log('determineTile called');
-        console.log('tileMapping:', tileMapping);
         console.log('this:', {
             elevation: this.elevation,
             temperature: this.temperature,
             precipitation: this.precipitation,
             windIntensity: this.windIntensity
         });
+
         const matchingTiles = tileMapping.filter(tile =>
             this.elevation >= tile.elevationLow && this.elevation <= tile.elevationHigh &&
             this.temperature >= tile.temperatureLow && this.temperature <= tile.temperatureHigh &&
             this.precipitation >= tile.precipitationLow && this.precipitation <= tile.precipitationHigh &&
-            this.windIntensity >= tile.windLow && this.windIntensity <= tile.windHigh
+            this.windIntensity >= tile.windLow && this.windIntensity <= tile.windHigh &&
+            tile.settlement === 0
         );
 
         if (matchingTiles.length > 0) {
+            // Randomly select a tile from all matching tiles
             const selectedTile = matchingTiles[Math.floor(Math.random() * matchingTiles.length)];
             this.tileType = selectedTile.tileType;
             this.tileModifier = selectedTile.modifier;
             this.tileVariant = selectedTile.variant;
+            console.log(`Selected tile for hex ${this.id}:`, selectedTile.fullTileName);
         } else {
             console.warn(`No matching tile found for hex ${this.id}. Using default tile.`);
             this.tileType = 'Base';
@@ -679,7 +691,14 @@ function createHexGridData(width, height, hexSize, noiseModule, tileMapping, see
                 hexData.baseTemperature = generateTemperature(noiseModule, col, row);
                 hexData.baseWindIntensity = generateWindIntensity(noiseModule, col, row);
 
-                hexData.updateEnvironment();
+                // Add some randomness to the environmental factors
+                hexData.updateEnvironment(
+                    (random.random() - 0.5) * 2, // Random adjustment between -1 and 1
+                    (random.random() - 0.5) * 2,
+                    (random.random() - 0.5) * 2,
+                    (random.random() - 0.5) * 2
+                );
+
                 hexData.determineTile(tileMapping);
                 hexData.recordSimulation('initial');
 
@@ -741,9 +760,9 @@ async function generateHexMap(html) {
     placedTileIds = createdTiles.map(tile => tile.id);
 
     // Update the tiles to ensure flags are set
-    await canvas.scene.updateEmbeddedDocuments("Tile", createdTiles.map(tile => ({
+    await canvas.scene.updateEmbeddedDocuments("Tile", createdTiles.map((tile, index) => ({
         _id: tile.id,
-        flags: { hexTile: true, hexId: tile.flags.hexId }
+        flags: { hexTile: true, hexId: hexGrid[index].id }
     })));
 
     let updateData = createdTiles.map((tile, index) => {
@@ -860,14 +879,15 @@ function getTileImage(hex, tileMapping) {
         hex.elevation >= tile.elevationLow && hex.elevation <= tile.elevationHigh &&
         hex.temperature >= tile.temperatureLow && hex.temperature <= tile.temperatureHigh &&
         hex.precipitation >= tile.precipitationLow && hex.precipitation <= tile.precipitationHigh &&
-        hex.windIntensity >= tile.windLow && hex.windIntensity <= tile.windHigh
+        hex.windIntensity >= tile.windLow && hex.windIntensity <= tile.windHigh &&
+        tile.settlement === 0
     );
 
     if (matchingTiles.length > 0) {
+        // Randomly select a tile from all matching tiles
         const selectedTile = matchingTiles[Math.floor(Math.random() * matchingTiles.length)];
-        const tilePath = `${selectedTile.fullTileName}`;
-        console.log(`Matched tile for hex ${hex.id}:`, tilePath);
-        return tilePath;
+        console.log(`Matched tile for hex ${hex.id}:`, selectedTile.fullTileName);
+        return selectedTile.fullTileName;
     } else {
         console.warn(`No matching tile found for hex ${hex.id}. Using default tile.`);
         return 'Hex_-_Base_(blank).png';
@@ -916,10 +936,10 @@ async function loadTileMapping() {
 
         // Parse each line into an object
         const tileMapping = lines.map(line => {
-            const [fullTileName, tileType, modifier, variant, elevationLow, elevationHigh, temperatureLow, temperatureHigh, precipitationLow, precipitationHigh, windLow, windHigh] = line.split(',').map(field => field.trim());
+            const [fullTileName, tileType, modifier, variant, elevationLow, elevationHigh, temperatureLow, temperatureHigh, precipitationLow, precipitationHigh, windLow, windHigh, settlement] = line.split(',').map(field => field.trim());
 
             const tileData = {
-                fullTileName, // Keep the full tile name including the number
+                fullTileName,
                 tileType: tileType.replace(/ /g, '_'),
                 modifier: modifier.replace(/ /g, '_'),
                 variant: variant.replace(/ /g, '_'),
@@ -930,7 +950,8 @@ async function loadTileMapping() {
                 precipitationLow: parseInt(precipitationLow),
                 precipitationHigh: parseInt(precipitationHigh),
                 windLow: parseInt(windLow),
-                windHigh: parseInt(windHigh)
+                windHigh: parseInt(windHigh),
+                settlement: parseInt(settlement)
             };
 
             console.log('Processed tile data:', tileData);
