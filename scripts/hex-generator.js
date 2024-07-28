@@ -1,10 +1,38 @@
 ﻿    let hexInfoBoxCreated = false;
 
-    Hooks.once('ready', () => {
-        createHexInfoBox();
-        createHoverInfoBox(); // Create the hover info box when the application is ready
 
-    });
+Hooks.once('ready', () => {
+    const factors = ['elevation', 'precipitation', 'temperature', 'windIntensity'];
+    const sceneId = game.scenes.current.id;
+
+    for (const factor of factors) {
+        game.settings.register('procedural-hex-maps', `${sceneId}-${factor}`, {
+            name: `Generated ${factor} data`,
+            scope: 'world',
+            config: false,
+            default: null,
+            type: Object
+        });
+    }
+    createHexInfoBox();
+    createHoverInfoBox(); //
+
+    // If you want to ensure the settings are set for the current scene at startup, you can add this:
+    console.log("Scene-specific settings registered for scene:", sceneId);
+});
+
+Hooks.once('init', () => {
+    const factors = ['elevation', 'precipitation', 'temperature', 'windIntensity'];
+    for (const factor of factors) {
+        game.settings.register('procedural-hex-maps', `temp-${factor}`, {
+            name: `Temporary ${factor} data`,
+            scope: 'client',
+            config: false,
+            default: null,
+            type: Object
+        });
+    }
+});
 
     // Button controls
     Hooks.on('getSceneControlButtons', (controls) => {
@@ -196,6 +224,7 @@ function attachHoverEventListeners(previewCanvas, noiseValues, width, params) {
             const hexInfoContent = `
         <div style="display: flex; flex-wrap: wrap;">
             <div style="width: 100%;"><strong>ID:</strong> ${hexData.id} x= ${hexData.x} y= ${hexData.y} <strong>Type:</strong> ${hexData.tileType} <strong>Modifier:</strong> ${hexData.tileModifier} <strong>Variant:</strong> ${hexData.tileVariant}</div>
+            <div style="width: 100%;"><strong>Tile:</strong> ${hexData.fullTileName}</div>
             <div style="width: 50%;"><strong>Elevation:</strong> ${hexData.elevation}</div>
             <div style="width: 50%;"><strong>Temperature:</strong> ${hexData.temperature}</div>
             <div style="width: 50%;"><strong>Humidity:</strong> ${hexData.humidity}</div>
@@ -527,14 +556,23 @@ async function showEnhancedHexMapDialog() {
             for (const factor of ['elevation', 'precipitation', 'temperature', 'windIntensity']) {
                 html.find(`#preview-${factor}`).on('click', () => previewNoise(html, factor));
             }
+            // Set the width to 70% of the screen width
+            const dialogElement = html.closest('.app');
+            dialogElement.css({
+                'width': '70%',
+                'left': '15%', // Center the dialog on the screen
+                'max-width': 'none' // Ensure it doesn't have a max-width limit
+            });
         },
         default: "generate",
-        width: 2000,
+        width: 800,
         height: 800
     }).render(true);
 }
 
-function previewNoise(html, factor) {
+
+
+async function previewNoise(html, factor) {
     try {
         const params = getNoiseParams(html, factor);
         const previewCanvas = html.find(`#${factor}-preview`)[0];
@@ -576,9 +614,8 @@ function previewNoise(html, factor) {
         // Use noiseData for hover functionality
         attachHoverEventListeners(previewCanvas, noiseData, previewWidth, params);
 
-        // Store the generated noise data in the html element for later use
-        html.data(`${factor}-noiseData`, noiseData);
-        html.data(`${factor}-noiseParams`, params);
+        // Save the noise data to temporary storage
+        await game.settings.set('procedural-hex-maps', `temp-${factor}`, { noiseData, noiseParams: params });
 
         console.log(`${factor} noise data stored:`, noiseData);
     } catch (error) {
@@ -592,6 +629,10 @@ function previewNoise(html, factor) {
         }
     }
 }
+
+
+
+
 
 
 
@@ -732,25 +773,21 @@ async function generateEnhancedHexMap(html) {
     const noiseData = {};
 
     try {
+        // Move noise data from temporary to generated storage
         for (const factor of factors) {
-            const generatedNoiseData = html.data(`${factor}-noiseData`);
-            const generatedNoiseParams = html.data(`${factor}-noiseParams`);
-
-            if (generatedNoiseData && generatedNoiseParams) {
-                console.log(`Saving generated noise data for ${factor}`);
-                await saveNoiseData(sceneId, factor, generatedNoiseData, generatedNoiseParams);
-            } else {
-                console.error(`No generated noise data found for ${factor}`);
-                throw new Error(`No generated noise data found for ${factor}`);
+            const tempData = await game.settings.get('procedural-hex-maps', `temp-${factor}`);
+            if (tempData) {
+                await game.settings.set('procedural-hex-maps', `${sceneId}-${factor}`, tempData);
+                await game.settings.set('procedural-hex-maps', `temp-${factor}`, null); // Clear temporary storage
             }
         }
 
-        // Load noise data from files
+        // Load noise data from generated files
         for (const factor of factors) {
             const loadedData = await loadNoiseData(sceneId, factor);
             if (loadedData) {
                 noiseData[factor] = loadedData.noiseData;
-                console.log(`Loaded noise data for ${factor}`);
+                console.log(`Loaded noise data for ${factor}:`, noiseData[factor]);
             } else {
                 throw new Error(`Failed to load noise data for ${factor}`);
             }
@@ -792,6 +829,9 @@ async function generateEnhancedHexMap(html) {
         ui.notifications.error(`Error generating hex map: ${error.message}`);
     }
 }
+
+
+
 
 
 
@@ -888,6 +928,7 @@ class HexData {
         this.notes = '';
 
         // Tile information
+        this.fullTileName = '';
         this.tileType = '';
         this.tileModifier = '';
         this.tileVariant = '';
@@ -980,6 +1021,7 @@ class HexData {
             this.tileType = selectedTile.tileType;
             this.tileModifier = selectedTile.modifier;
             this.tileVariant = selectedTile.variant;
+            this.fullTileName = selectedTile.fullTileName;
             console.log(`Selected tile for hex ${this.id}:`, selectedTile.fullTileName);
         } else {
             console.warn(`No matching tile found for hex ${this.id}. Using default tile.`);
@@ -1191,18 +1233,13 @@ async function ensureSceneDirectory(sceneId) {
 }
 
 async function saveNoiseData(sceneId, factor, noiseData, params) {
-    console.log(`Attempting to save noise data for ${factor}`);
     const sceneDir = await ensureSceneDirectory(sceneId);
-    console.log(`Scene directory: ${sceneDir}`);
     const fileName = `${factor}_noise.json`;
     const filePath = `${sceneDir}/${fileName}`;
-    console.log(`File path: ${filePath}`);
     const fileContent = JSON.stringify({ noiseData, params });
 
     try {
-        console.log(`Uploading file for ${factor}`);
-        const file = new File([fileContent], fileName, { type: 'application/json' });
-        await FilePicker.upload('data', sceneDir, file);
+        await FilePicker.upload('data', sceneDir, new File([fileContent], fileName, { type: 'application/json' }));
         console.log(`Successfully saved noise data for ${factor} to ${filePath}`);
     } catch (error) {
         console.error(`Error saving noise data for ${factor}:`, error);
@@ -1210,27 +1247,11 @@ async function saveNoiseData(sceneId, factor, noiseData, params) {
     }
 }
 
-
-//function to load noise data that has been saved
 async function loadNoiseData(sceneId, factor) {
-    const sceneDir = await ensureSceneDirectory(sceneId);
-    const filePath = `${sceneDir}/${factor}_noise.json`;
-
-    try {
-        const response = await fetch(filePath);
-        if (response.ok) {
-            const data = await response.json();
-            console.log(`Loaded noise data for ${factor} from ${filePath}`);
-            return data;
-        } else {
-            console.error(`Failed to load noise data for ${factor}: ${response.statusText}`);
-        }
-    } catch (error) {
-        console.error(`Error loading noise data for ${factor}:`, error);
-    }
-
-    return null;
+    return await game.settings.get('procedural-hex-maps', `${sceneId}-${factor}`);
 }
+
+
 
     // Function to load tile mapping from CSV
     async function loadTileMapping() {
