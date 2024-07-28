@@ -68,7 +68,7 @@
         hexInfoBox.style.position = 'fixed';
         hexInfoBox.style.bottom = '120px';
         hexInfoBox.style.left = '50%';
-        hexInfoBox.style.width = '70%';
+        hexInfoBox.style.width = '60%';
         hexInfoBox.style.height = "20%";
         hexInfoBox.style.transform = 'translateX(-50%)';
         hexInfoBox.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
@@ -100,27 +100,28 @@
     }
 
 
-function attachHoverEventListeners(previewCanvas, noiseValues, width) {
+function attachHoverEventListeners(previewCanvas, noiseValues, width, params) {
     const hoverInfoBox = document.getElementById('hover-info-box');
 
     previewCanvas.addEventListener('mousemove', (event) => {
         const rect = previewCanvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        const x = Math.floor((event.clientX - rect.left) * (width / rect.width));
+        const y = Math.floor((event.clientY - rect.top) * (width / rect.width));
 
-        const index = Math.floor(y) * width + Math.floor(x);
+        const index = y * width + x;
         const noiseValue = noiseValues[index];
 
         hoverInfoBox.style.left = `${event.clientX + 10}px`;
         hoverInfoBox.style.top = `${event.clientY + 10}px`;
         hoverInfoBox.style.display = 'block';
-        hoverInfoBox.innerHTML = `Noise Value: ${noiseValue.toFixed(2)}`;
+        hoverInfoBox.innerHTML = `Noise Value: ${noiseValue.toFixed(4)}`;
     });
 
     previewCanvas.addEventListener('mouseout', () => {
         hoverInfoBox.style.display = 'none';
     });
 }
+
 
     //createHexInfoBox();
 
@@ -502,48 +503,101 @@ function attachHoverEventListeners(previewCanvas, noiseValues, width) {
         }
     }
 
-    async function showEnhancedHexMapDialog() {
-        const content = await renderTemplate("modules/procedural-hex-maps/templates/enhanced-hex-map-dialog.html", {
-            environmentalFactors: ['elevation', 'precipitation', 'temperature', 'windIntensity'],
-            noiseTypes: ['perlin', 'simplex', 'worley', 'fractalPerlin', 'fractalSimplex', 'fractalWorley']
-        });
+async function showEnhancedHexMapDialog() {
+    const content = await renderTemplate("modules/procedural-hex-maps/templates/enhanced-hex-map-dialog.html", {
+        environmentalFactors: ['elevation', 'precipitation', 'temperature', 'windIntensity'],
+        noiseTypes: ['perlin', 'simplex', 'worley', 'fractalPerlin', 'fractalSimplex', 'fractalWorley']
+    });
 
-        new Dialog({
-            title: "Generate Enhanced Hex Map",
-            content: content,
-            buttons: {
-                generate: {
-                    icon: '<i class="fas fa-magic"></i>',
-                    label: "Generate",
-                    callback: (html) => generateEnhancedHexMap(html)
-                },
-                cancel: {
-                    icon: '<i class="fas fa-times"></i>',
-                    label: "Cancel"
-                }
+    new Dialog({
+        title: "Generate Enhanced Hex Map",
+        content: content,
+        buttons: {
+            generate: {
+                icon: '<i class="fas fa-magic"></i>',
+                label: "Generate",
+                callback: (html) => generateEnhancedHexMap(html)
             },
-            render: (html) => {
-                for (const factor of ['elevation', 'precipitation', 'temperature', 'windIntensity']) {
-                    html.find(`#preview-${factor}`).on('click', () => previewNoise(html, factor));
-                }
-            },
-            default: "generate",
-            width: 2000, // Increase this value to make the dialog wider
-            height: 800
-        }).render(true);
-    }
+            cancel: {
+                icon: '<i class="fas fa-times"></i>',
+                label: "Cancel"
+            }
+        },
+        render: (html) => {
+            for (const factor of ['elevation', 'precipitation', 'temperature', 'windIntensity']) {
+                html.find(`#preview-${factor}`).on('click', () => previewNoise(html, factor));
+            }
+        },
+        default: "generate",
+        width: 2000,
+        height: 800
+    }).render(true);
+}
 
 function previewNoise(html, factor) {
-    const params = getNoiseParams(html, factor);
-    const previewCanvas = html.find(`#${factor}-preview`)[0];
-    const ctx = previewCanvas.getContext('2d');
-    const width = previewCanvas.width;
-    const height = previewCanvas.height;
+    try {
+        const params = getNoiseParams(html, factor);
+        const previewCanvas = html.find(`#${factor}-preview`)[0];
+        if (!previewCanvas) {
+            throw new Error('Preview canvas not found');
+        }
+        const ctx = previewCanvas.getContext('2d');
+        const previewWidth = 250;
+        const previewHeight = 250;
+        previewCanvas.width = previewWidth;
+        previewCanvas.height = previewHeight;
 
-    const noiseModule = new NoiseModule();
-    noiseModule.setSeed(params.seed);
+        console.log(`Preview dimensions for ${factor}: ${previewWidth}x${previewHeight}`);
+        console.log(`Noise parameters for ${factor}:`, params);
 
-    const imageData = ctx.createImageData(width, height);
+        const noiseModule = new NoiseModule();
+        noiseModule.setSeed(params.seed);
+
+        const noiseData = generateUnifiedNoise(previewWidth, previewHeight, params, noiseModule);
+
+        // Render preview
+        const imageData = ctx.createImageData(previewWidth, previewHeight);
+
+        for (let y = 0; y < previewHeight; y++) {
+            for (let x = 0; x < previewWidth; x++) {
+                const noiseValue = noiseData[y * previewWidth + x];
+
+                const color = Math.floor(255 * (1 - (noiseValue / 10)));
+                const index = (y * previewWidth + x) * 4;
+                imageData.data[index] = color;
+                imageData.data[index + 1] = color;
+                imageData.data[index + 2] = color;
+                imageData.data[index + 3] = 255;
+            }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+
+        // Use noiseData for hover functionality
+        attachHoverEventListeners(previewCanvas, noiseData, previewWidth, params);
+
+        // Store the generated noise data in the html element for later use
+        html.data(`${factor}-noiseData`, noiseData);
+        html.data(`${factor}-noiseParams`, params);
+
+        console.log(`${factor} noise data stored:`, noiseData);
+    } catch (error) {
+        console.error(`Error in previewNoise for ${factor}:`, error);
+        if (previewCanvas) {
+            const ctx = previewCanvas.getContext('2d');
+            ctx.fillStyle = 'red';
+            ctx.font = '12px Arial';
+            ctx.fillText(`Error generating preview for ${factor}`, 10, 20);
+            ctx.fillText(error.message, 10, 40);
+        }
+    }
+}
+
+
+
+
+
+function generateNoiseValues(noiseModule, width, height, params) {
     const noiseValues = new Array(width * height);
     let minNoiseValue = Infinity;
     let maxNoiseValue = -Infinity;
@@ -558,27 +612,76 @@ function previewNoise(html, factor) {
         }
     }
 
-    console.log(`Preview ${factor} Noise Min Value: ${minNoiseValue}`);
-    console.log(`Preview ${factor} Noise Max Value: ${maxNoiseValue}`);
+    console.log(`Noise Min Value: ${minNoiseValue}`);
+    console.log(`Noise Max Value: ${maxNoiseValue}`);
 
-    // Normalize and render noise values
+    // Normalize noise values if required
+    if (params.normalize) {
+        for (let i = 0; i < noiseValues.length; i++) {
+            noiseValues[i] = normalizeToRange(noiseValues[i], minNoiseValue, maxNoiseValue, params.min, params.max);
+        }
+    } else {
+        // Apply user-specified scaling to the raw noise value
+        for (let i = 0; i < noiseValues.length; i++) {
+            noiseValues[i] *= 10; // Scale the raw noise value to the 0-10 range
+            noiseValues[i] = Math.max(0, Math.min(10, noiseValues[i])); // Cap the noise value within the 0-10 range
+        }
+    }
+
+    return noiseValues;
+}
+
+function generateUnifiedNoise(width, height, params, noiseModule) {
+    const noiseValues = new Array(width * height);
+    let minNoiseValue = Infinity;
+    let maxNoiseValue = -Infinity;
+
+    // Generate noise values
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            let noiseValue = noiseValues[y * width + x];
+            const noiseValue = generateEnvironmentalFactor(noiseModule, x, y, params);
+            const index = y * width + x;
+            noiseValues[index] = noiseValue;
 
-            // Normalize noiseValue to user-specified range based on the provided min and max
-            if (params.normalize) {
-                noiseValue = normalizeToRange(noiseValue, minNoiseValue, maxNoiseValue, params.min, params.max);
-            } else {
-                noiseValue *= 10; // Scale the raw noise value to the 0-10 range
-            }
+            if (noiseValue < minNoiseValue) minNoiseValue = noiseValue;
+            if (noiseValue > maxNoiseValue) maxNoiseValue = noiseValue;
+        }
+    }
 
-            // Cap the noise value within the 0-10 range
-            noiseValue = Math.max(0, Math.min(10, noiseValue));
+    // Normalize if needed
+    const range = maxNoiseValue - minNoiseValue;
+    const scaleFactor = params.normalize ? (params.max - params.min) / range : 10;
+    const offset = params.normalize ? params.min - minNoiseValue * scaleFactor : 0;
 
-            // Update noiseValues with the final value for hover display
-            noiseValues[y * width + x] = noiseValue;
+    for (let i = 0; i < noiseValues.length; i++) {
+        let scaledValue = noiseValues[i] * scaleFactor + offset;
+        noiseValues[i] = Math.max(0, Math.min(10, scaledValue));
+    }
 
+    return noiseValues;
+}
+
+
+function normalizeValue(value, min, max, newMin, newMax) {
+    if (max === min) {
+        return newMin; // Avoid division by zero
+    }
+    return ((value - min) / (max - min)) * (newMax - newMin) + newMin;
+}
+function normalizeValue(value, min, max, newMin, newMax) {
+    if (max === min) {
+        return newMin; // Avoid division by zero
+    }
+    return ((value - min) / (max - min)) * (newMax - newMin) + newMin;
+}
+
+function renderNoiseValuesToCanvas(ctx, noiseValues, width, height, params) {
+    const imageData = ctx.createImageData(width, height);
+
+    // Render noise values to canvas
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const noiseValue = noiseValues[y * width + x];
             const color = Math.floor(255 * (1 - (noiseValue / 10))); // Adjust color to the capped value
             const index = (y * width + x) * 4;
             imageData.data[index] = color;     // Red
@@ -589,10 +692,7 @@ function previewNoise(html, factor) {
     }
 
     ctx.putImageData(imageData, 0, 0);
-    attachHoverEventListeners(previewCanvas, noiseValues, width);
-    console.log(`Preview generated for ${factor}. Min: ${params.min}, Max: ${params.max}`);
 }
-
 
 
 function normalizeToRange(value, min, max, newMin, newMax) {
@@ -607,52 +707,62 @@ function normalizeToRange(value, min, max, newMin, newMax) {
 }
 
 
-    function getNoiseParams(html, factor) {
-        return {
-            noiseType: html.find(`#${factor}-noiseType`).val(),
-            scale: parseFloat(html.find(`#${factor}-scale`).val()),
-            octaves: parseInt(html.find(`#${factor}-octaves`).val()),
-            lacunarity: parseFloat(html.find(`#${factor}-lacunarity`).val()),
-            gain: parseFloat(html.find(`#${factor}-gain`).val()),
-            min: parseInt(html.find(`#${factor}-min`).val()),
-            max: parseInt(html.find(`#${factor}-max`).val()),
-            seed: html.find(`#${factor}-seed`).val() ? parseInt(html.find(`#${factor}-seed`).val()) : Math.floor(Math.random() * 1000000),
-            normalize: html.find(`#${factor}-normalize`).is(':checked')
-        };
-    }
 
-    async function generateEnhancedHexMap(html) {
-        const width = canvas.dimensions.width;
-        const height = canvas.dimensions.height;
-        const hexSize = parseInt(html.find('input[name="hex-size"]').val()) || canvas.grid.size;
+function getNoiseParams(html, factor) {
+    return {
+        noiseType: html.find(`#${factor}-noiseType`).val(),
+        scale: parseFloat(html.find(`#${factor}-scale`).val()),
+        octaves: parseInt(html.find(`#${factor}-octaves`).val()),
+        lacunarity: parseFloat(html.find(`#${factor}-lacunarity`).val()),
+        gain: parseFloat(html.find(`#${factor}-gain`).val()),
+        min: parseFloat(html.find(`#${factor}-min`).val()),
+        max: parseFloat(html.find(`#${factor}-max`).val()),
+        seed: html.find(`#${factor}-seed`).val() ? parseInt(html.find(`#${factor}-seed`).val()) : Math.floor(Math.random() * 1000000),
+        normalize: html.find(`#${factor}-normalize`).is(':checked')
+    };
+}
 
-        const noiseParams = {
-            elevation: getNoiseParams(html, 'elevation'),
-            precipitation: getNoiseParams(html, 'precipitation'),
-            temperature: getNoiseParams(html, 'temperature'),
-            windIntensity: getNoiseParams(html, 'windIntensity'),
-            randomFactor: parseFloat(html.find('#randomFactor').val())
-        };
+async function generateEnhancedHexMap(html) {
+    const sceneId = canvas.scene.id;
+    const width = canvas.dimensions.width;
+    const height = canvas.dimensions.height;
+    const hexSize = parseInt(html.find('input[name="hex-size"]').val()) || canvas.grid.size;
 
-        const seed = parseInt(html.find('#main-seed').val()) || Math.floor(Math.random() * 1000000);
+    const factors = ['elevation', 'precipitation', 'temperature', 'windIntensity'];
+    const noiseData = {};
 
-        console.log(`Generating enhanced hex map: ${width}x${height}, hex size: ${hexSize}, seed: ${seed}`);
+    try {
+        for (const factor of factors) {
+            const generatedNoiseData = html.data(`${factor}-noiseData`);
+            const generatedNoiseParams = html.data(`${factor}-noiseParams`);
 
-        const noiseModule = new NoiseModule();
-        noiseModule.setSeed(seed);
-
-        let tileMapping;
-        try {
-            tileMapping = await loadTileMapping();
-        } catch (error) {
-            console.error("Error loading tile mapping:", error);
-            ui.notifications.error("Failed to load tile mapping. Check the console for details.");
-            return;
+            if (generatedNoiseData && generatedNoiseParams) {
+                console.log(`Saving generated noise data for ${factor}`);
+                await saveNoiseData(sceneId, factor, generatedNoiseData, generatedNoiseParams);
+            } else {
+                console.error(`No generated noise data found for ${factor}`);
+                throw new Error(`No generated noise data found for ${factor}`);
+            }
         }
 
-        const hexGrid = createHexGridData(width, height, hexSize, noiseModule, tileMapping, seed, noiseParams);
+        // Load noise data from files
+        for (const factor of factors) {
+            const loadedData = await loadNoiseData(sceneId, factor);
+            if (loadedData) {
+                noiseData[factor] = loadedData.noiseData;
+                console.log(`Loaded noise data for ${factor}`);
+            } else {
+                throw new Error(`Failed to load noise data for ${factor}`);
+            }
+        }
 
-        let placedTiles = hexGrid.map(hex => ({
+        const seed = parseInt(html.find('#main-seed').val()) || Math.floor(Math.random() * 1000000);
+        console.log(`Generating enhanced hex map: ${width}x${height}, hex size: ${hexSize}, seed: ${seed}`);
+
+        const tileMapping = await loadTileMapping();
+        const hexGrid = createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
+
+        const placedTiles = hexGrid.map(hex => ({
             x: hex.x - (hexSize + 10) / 2,
             y: hex.y - hexSize / 2,
             width: hexSize + 10,
@@ -660,56 +770,46 @@ function normalizeToRange(value, min, max, newMin, newMax) {
             rotation: 0,
             sort: hex.staggeredRow,
             flags: { hexTile: true, hexId: hex.id },
-            hexData: hex // Store the entire hex data object
+            texture: {
+                src: `modules/procedural-hex-maps/tiles/${getTileImage(hex, tileMapping)}`,
+                scaleX: 2,
+                scaleY: 2,
+                offsetX: 0,
+                offsetY: 0
+            }
         }));
 
-        console.log('Total tiles to place:', placedTiles.length);
-
-        const tileFolder = "modules/procedural-hex-maps/tiles";
-        let createdTiles = await canvas.scene.createEmbeddedDocuments("Tile", placedTiles);
+        const createdTiles = await canvas.scene.createEmbeddedDocuments("Tile", placedTiles);
         placedTileIds = createdTiles.map(tile => tile.id);
-
-        // Update the tiles to ensure flags are set
-        await canvas.scene.updateEmbeddedDocuments("Tile", createdTiles.map((tile, index) => ({
-            _id: tile.id,
-            flags: { hexTile: true, hexId: hexGrid[index].id }
-        })));
-
-        let updateData = createdTiles.map((tile, index) => {
-            const hex = tile.flags.hexData || hexGrid[index]; // Use stored hex data or fall back to hexGrid
-            const texturePath = `${tileFolder}/${getTileImage(hex, tileMapping)}`;
-            console.log(`Updating tile with path: ${texturePath}`);
-            return {
-                _id: tile.id,
-                texture: {
-                    src: texturePath,
-                    scaleX: 2,
-                    scaleY: 2,
-                    offsetX: 0,
-                    offsetY: 0
-                },
-                sort: tile.sort,
-                flags: { ...tile.flags, hexId: hex.id } // Ensure hexId is set in flags
-            };
-        });
-
-        try {
-            await canvas.scene.updateEmbeddedDocuments("Tile", updateData);
-            console.log('All tiles placed and images assigned');
-        } catch (error) {
-            console.error("Error updating tile textures:", error);
-            ui.notifications.error("Failed to update some tile textures. Check the console for details.");
-        }
 
         await canvas.scene.setFlag("procedural-hex-maps", "hexGridData", hexGrid);
         await updateHexTilesWithIds();
 
-        //  a delay to ensure the tiles are rendered before adding hover listeners
-        setTimeout(() => {
-            addHexHoverListeners();
-            console.log('Hex hover listeners added');
-        }, 1000);
+        addHexHoverListeners();
+        console.log('All tiles placed and images assigned');
+    } catch (error) {
+        console.error('Error generating enhanced hex map:', error);
+        ui.notifications.error(`Error generating hex map: ${error.message}`);
     }
+}
+
+
+
+function adjustNoiseData(noiseData, originalSize, newWidth, newHeight) {
+    const adjustedData = new Array(newWidth * newHeight);
+    const scaleX = newWidth / originalSize;
+    const scaleY = newHeight / originalSize;
+
+    for (let y = 0; y < newHeight; y++) {
+        for (let x = 0; x < newWidth; x++) {
+            const sourceX = Math.min(Math.floor(x / scaleX), originalSize - 1);
+            const sourceY = Math.min(Math.floor(y / scaleY), originalSize - 1);
+            adjustedData[y * newWidth + x] = noiseData[sourceY * originalSize + sourceX];
+        }
+    }
+
+    return adjustedData;
+}
 
 
 
@@ -719,222 +819,210 @@ function normalizeToRange(value, min, max, newMin, newMax) {
     placedTileIds = [];
 
     // Hex data structure
-    class HexData {
-        constructor(id, x, y, col, row) {
-            this.id = id;
-            this.x = x;
-            this.y = y;
-            this.col = col;
-            this.row = row;
-            this.staggeredRow = 0;
+class HexData {
+    constructor(id, x, y, col, row) {
+        this.id = id;
+        this.x = x;
+        this.y = y;
+        this.col = col;
+        this.row = row;
+        this.staggeredRow = 0;
 
-            // Base environmental characteristics
-            this.baseElevation = 0;
-            this.basePrecipitation = 0;
-            this.baseTemperature = 0;
-            this.baseWindIntensity = 0;
+        // Base environmental characteristics
+        this.baseElevation = 0;
+        this.basePrecipitation = 0;
+        this.baseTemperature = 0;
+        this.baseWindIntensity = 0;
 
-            // Current environmental characteristics (can be modified in real-time)
-            this.elevation = 0;
-            this.precipitation = 0;
-            this.temperature = 0;
-            this.windIntensity = 0;
+        // Current environmental characteristics (can be modified in real-time)
+        this.elevation = 0;
+        this.precipitation = 0;
+        this.temperature = 0;
+        this.windIntensity = 0;
 
-            // Terrain characteristics
-            this.humidity = 0;
-            this.windDirection = 0;
+        // Terrain characteristics
+        this.humidity = 0;
+        this.windDirection = 0;
 
-            // Biome and vegetation
-            this.biomeType = '';
-            this.vegetationType = '';
-            this.vegetationDensity = 0;
+        // Biome and vegetation
+        this.biomeType = '';
+        this.vegetationType = '';
+        this.vegetationDensity = 0;
 
-            // Water features
-            this.isWater = false;
-            this.waterDepth = 0;
-            this.isCoastal = false;
-            this.riverSize = 0;
+        // Water features
+        this.isWater = false;
+        this.waterDepth = 0;
+        this.isCoastal = false;
+        this.riverSize = 0;
 
-            // Resources and features
-            this.resources = [];
-            this.landmarks = [];
+        // Resources and features
+        this.resources = [];
+        this.landmarks = [];
 
-            // Civilization and development
-            this.owner = '';
-            this.population = 0;
-            this.developmentLevel = 0;
-            this.buildingType = '';
+        // Civilization and development
+        this.owner = '';
+        this.population = 0;
+        this.developmentLevel = 0;
+        this.buildingType = '';
 
-            // Game mechanics
-            this.movementCost = 1;
-            this.defensebonus = 0;
-            this.visibilityRange = 1;
+        // Game mechanics
+        this.movementCost = 1;
+        this.defensebonus = 0;
+        this.visibilityRange = 1;
 
-            // Environmental conditions
-            this.pollutionLevel = 0;
-            this.radiationLevel = 0;
+        // Environmental conditions
+        this.pollutionLevel = 0;
+        this.radiationLevel = 0;
 
-            // Time-based properties
-            this.seasonalEffects = {};
-            this.weatherCondition = '';
+        // Time-based properties
+        this.seasonalEffects = {};
+        this.weatherCondition = '';
 
-            // Fog of war
-            this.isExplored = false;
-            this.lastExploredTurn = -1;
+        // Fog of war
+        this.isExplored = false;
+        this.lastExploredTurn = -1;
 
-            // Enemies, items, and notes
-            this.potentialEnemies = [];
-            this.items = [];
-            this.notes = '';
+        // Enemies, items, and notes
+        this.potentialEnemies = [];
+        this.items = [];
+        this.notes = '';
 
-            // Tile information
-            this.tileType = '';
-            this.tileModifier = '';
-            this.tileVariant = '';
+        // Tile information
+        this.tileType = '';
+        this.tileModifier = '';
+        this.tileVariant = '';
 
-            // Simulation history
-            this.simulationHistory = [];
+        // Simulation history
+        this.simulationHistory = [];
 
-            // Custom properties
-            this.customProperties = {};
-        }
+        // Custom properties
+        this.customProperties = {};
+    }
 
-        setStaggeredRow(staggeredRow) {
-            this.staggeredRow = staggeredRow;
-        }
+    setStaggeredRow(staggeredRow) {
+        this.staggeredRow = staggeredRow;
+    }
 
-        determineTile(tileMapping) {
-            console.log('determineTile called');
-            console.log('this:', {
-                elevation: this.elevation,
-                temperature: this.temperature,
-                precipitation: this.precipitation,
-                windIntensity: this.windIntensity
-            });
+    updateEnvironment(elevationMod = 0, precipitationMod = 0, temperatureMod = 0, windMod = 0) {
+        this.elevation = Math.max(0, Math.min(10, this.baseElevation + elevationMod));
+        this.precipitation = Math.max(0, Math.min(10, this.basePrecipitation + precipitationMod));
+        this.temperature = Math.max(0, Math.min(10, this.baseTemperature + temperatureMod));
+        this.windIntensity = Math.max(0, Math.min(10, this.baseWindIntensity + windMod));
+        this.isWater = this.elevation <= 2; // Assuming water level is 2
 
-            const matchingTiles = tileMapping.filter(tile =>
-                this.elevation >= tile.elevationLow && this.elevation <= tile.elevationHigh &&
-                this.temperature >= tile.temperatureLow && this.temperature <= tile.temperatureHigh &&
-                this.precipitation >= tile.precipitationLow && this.precipitation <= tile.precipitationHigh &&
-                this.windIntensity >= tile.windLow && this.windIntensity <= tile.windHigh &&
-                tile.settlement === 0
-            );
+        console.log(`Hex ${this.id} updated environment:`, {
+            elevation: this.elevation,
+            precipitation: this.precipitation,
+            temperature: this.temperature,
+            windIntensity: this.windIntensity,
+            isWater: this.isWater
+        });
 
-            if (matchingTiles.length > 0) {
-                // Randomly select a tile from all matching tiles
-                const selectedTile = matchingTiles[Math.floor(Math.random() * matchingTiles.length)];
-                this.tileType = selectedTile.tileType;
-                this.tileModifier = selectedTile.modifier;
-                this.tileVariant = selectedTile.variant;
-                console.log(`Selected tile for hex ${this.id}:`, selectedTile.fullTileName);
-            } else {
-                console.warn(`No matching tile found for hex ${this.id}. Using default tile.`);
-                this.tileType = 'Base';
-                this.tileModifier = 'blank';
-                this.tileVariant = '';
-            }
-        }
+        this.updateDerivedCharacteristics();
+    }
 
-        updateEnvironment(elevationMod = 0, precipitationMod = 0, temperatureMod = 0, windMod = 0) {
-            this.elevation = Math.max(1, Math.min(10, this.baseElevation + elevationMod));
-            this.precipitation = Math.max(1, Math.min(10, this.basePrecipitation + precipitationMod));
-            this.temperature = Math.max(1, Math.min(10, this.baseTemperature + temperatureMod));
-            this.windIntensity = Math.max(1, Math.min(10, this.baseWindIntensity + windMod));
-            this.isWater = this.elevation <= 2; // Assuming water level is 2
+    updateDerivedCharacteristics() {
+        this.humidity = (this.precipitation * 2 + (10 - this.temperature)) / 3;
+        this.vegetationDensity = (this.precipitation + this.temperature - this.elevation / 2) / 2;
+        if (this.isWater) this.vegetationDensity = 0;
+        this.determineBiomeType();
+        this.updateMovementCost();
+    }
 
-            this.updateDerivedCharacteristics();
-        }
-
-        updateDerivedCharacteristics() {
-            this.humidity = (this.precipitation * 2 + (10 - this.temperature)) / 3;
-            this.vegetationDensity = (this.precipitation + this.temperature - this.elevation / 2) / 2;
-            if (this.isWater) this.vegetationDensity = 0;
-            this.determineBiomeType();
-            this.updateMovementCost();
-        }
-
-        determineBiomeType() {
-            if (this.isWater) {
-                this.biomeType = this.elevation === 1 ? 'ocean' : 'lake';
-            } else if (this.elevation > 8) {
-                this.biomeType = 'mountain';
-            } else if (this.temperature < 3) {
-                this.biomeType = 'tundra';
-            } else if (this.precipitation < 3) {
-                this.biomeType = 'desert';
-            } else if (this.temperature > 7 && this.precipitation > 7) {
-                this.biomeType = 'tropical rainforest';
-            } else if (this.temperature > 7) {
-                this.biomeType = 'savanna';
-            } else if (this.precipitation > 7) {
-                this.biomeType = 'temperate rainforest';
-            } else {
-                this.biomeType = 'temperate forest';
-            }
-        }
-
-        updateMovementCost() {
-            this.movementCost = 1; // Base cost
-            if (this.isWater) this.movementCost = this.waterDepth > 1 ? 2 : 1.5;
-            else if (this.elevation > 8) this.movementCost = 3;
-            else if (this.elevation > 6) this.movementCost = 2;
-            else if (this.vegetationDensity > 7) this.movementCost = 1.5;
-        }
-
-        addPotentialEnemy(enemy) {
-            this.potentialEnemies.push(enemy);
-        }
-
-        removePotentialEnemy(enemyId) {
-            this.potentialEnemies = this.potentialEnemies.filter(e => e.id !== enemyId);
-        }
-
-        addItem(item) {
-            this.items.push(item);
-        }
-
-        removeItem(itemId) {
-            this.items = this.items.filter(i => i.id !== itemId);
-        }
-
-        updateNotes(newNotes) {
-            this.notes = newNotes;
-        }
-
-        recordSimulation(simulationName) {
-            this.simulationHistory.push({
-                name: simulationName,
-                timestamp: Date.now(),
-                elevation: this.elevation,
-                precipitation: this.precipitation,
-                temperature: this.temperature,
-                windIntensity: this.windIntensity,
-                humidity: this.humidity,
-                biomeType: this.biomeType,
-                vegetationDensity: this.vegetationDensity,
-                isWater: this.isWater,
-                movementCost: this.movementCost,
-                tileType: this.tileType,
-                tileModifier: this.tileModifier,
-                tileVariant: this.tileVariant
-            });
-        }
-
-        getSimulationResult(simulationName) {
-            return this.simulationHistory.find(sim => sim.name === simulationName);
-        }
-
-        setCustomProperty(key, value) {
-            this.customProperties[key] = value;
-        }
-
-        getCustomProperty(key) {
-            return this.customProperties[key];
+    determineBiomeType() {
+        if (this.isWater) {
+            this.biomeType = this.elevation === 1 ? 'ocean' : 'lake';
+        } else if (this.elevation > 8) {
+            this.biomeType = 'mountain';
+        } else if (this.temperature < 3) {
+            this.biomeType = 'tundra';
+        } else if (this.precipitation < 3) {
+            this.biomeType = 'desert';
+        } else if (this.temperature > 7 && this.precipitation > 7) {
+            this.biomeType = 'tropical rainforest';
+        } else if (this.temperature > 7) {
+            this.biomeType = 'savanna';
+        } else if (this.precipitation > 7) {
+            this.biomeType = 'temperate rainforest';
+        } else {
+            this.biomeType = 'temperate forest';
         }
     }
 
+    updateMovementCost() {
+        this.movementCost = 1; // Base cost
+        if (this.isWater) this.movementCost = this.waterDepth > 1 ? 2 : 1.5;
+        else if (this.elevation > 8) this.movementCost = 3;
+        else if (this.elevation > 6) this.movementCost = 2;
+        else if (this.vegetationDensity > 7) this.movementCost = 1.5;
+    }
+
+    determineTile(tileMapping) {
+        console.log('determineTile called');
+        console.log('this:', {
+            elevation: this.elevation,
+            temperature: this.temperature,
+            precipitation: this.precipitation,
+            windIntensity: this.windIntensity
+        });
+
+        const matchingTiles = tileMapping.filter(tile =>
+            this.elevation >= tile.elevationLow && this.elevation <= tile.elevationHigh &&
+            this.temperature >= tile.temperatureLow && this.temperature <= tile.temperatureHigh &&
+            this.precipitation >= tile.precipitationLow && this.precipitation <= tile.precipitationHigh &&
+            this.windIntensity >= tile.windLow && this.windIntensity <= tile.windHigh &&
+            tile.settlement === 0
+        );
+
+        if (matchingTiles.length > 0) {
+            // Randomly select a tile from all matching tiles
+            const selectedTile = matchingTiles[Math.floor(Math.random() * matchingTiles.length)];
+            this.tileType = selectedTile.tileType;
+            this.tileModifier = selectedTile.modifier;
+            this.tileVariant = selectedTile.variant;
+            console.log(`Selected tile for hex ${this.id}:`, selectedTile.fullTileName);
+        } else {
+            console.warn(`No matching tile found for hex ${this.id}. Using default tile.`);
+            this.tileType = 'Base';
+            this.tileModifier = 'blank';
+            this.tileVariant = '';
+        }
+    }
+
+    recordSimulation(simulationName) {
+        this.simulationHistory.push({
+            name: simulationName,
+            timestamp: Date.now(),
+            elevation: this.elevation,
+            precipitation: this.precipitation,
+            temperature: this.temperature,
+            windIntensity: this.windIntensity,
+            humidity: this.humidity,
+            biomeType: this.biomeType,
+            vegetationDensity: this.vegetationDensity,
+            isWater: this.isWater,
+            movementCost: this.movementCost,
+            tileType: this.tileType,
+            tileModifier: this.tileModifier,
+            tileVariant: this.tileVariant
+        });
+    }
+
+    getSimulationResult(simulationName) {
+        return this.simulationHistory.find(sim => sim.name === simulationName);
+    }
+
+    setCustomProperty(key, value) {
+        this.customProperties[key] = value;
+    }
+
+    getCustomProperty(key) {
+        return this.customProperties[key];
+    }
+}
+
     // Function to create hex grid data
-function createHexGridData(width, height, hexSize, noiseModule, tileMapping, seed, noiseParams) {
+function createHexGridData(width, height, hexSize, noiseData, tileMapping, seed) {
     const hexGrid = [];
     const hexWidth = hexSize + 10;
     const hexHeight = hexSize;
@@ -944,43 +1032,10 @@ function createHexGridData(width, height, hexSize, noiseModule, tileMapping, see
     const columns = Math.ceil(width / horizontalSpacing);
     const rows = Math.ceil(height / hexHeight);
 
-    noiseModule.setSeed(seed);
-
     const random = new SeededRandom(seed);
 
     let id = 1;
 
-    let minNoiseValue = {
-        elevation: Infinity,
-        precipitation: Infinity,
-        temperature: Infinity,
-        windIntensity: Infinity
-    };
-    let maxNoiseValue = {
-        elevation: -Infinity,
-        precipitation: -Infinity,
-        temperature: -Infinity,
-        windIntensity: -Infinity
-    };
-
-    // First pass to find min and max values for normalization
-    for (let col = 0; col < columns; col++) {
-        for (let row = 0; row < rows; row++) {
-            const noiseValues = {
-                elevation: generateEnvironmentalFactor(noiseModule, col, row, noiseParams.elevation),
-                precipitation: generateEnvironmentalFactor(noiseModule, col, row, noiseParams.precipitation),
-                temperature: generateEnvironmentalFactor(noiseModule, col, row, noiseParams.temperature),
-                windIntensity: generateEnvironmentalFactor(noiseModule, col, row, noiseParams.windIntensity)
-            };
-
-            for (let factor in noiseValues) {
-                minNoiseValue[factor] = Math.min(minNoiseValue[factor], noiseValues[factor]);
-                maxNoiseValue[factor] = Math.max(maxNoiseValue[factor], noiseValues[factor]);
-            }
-        }
-    }
-
-    // Second pass to create hex data with normalized values
     for (let col = 0; col < columns; col++) {
         for (let row = 0; row < rows; row++) {
             const x = col * horizontalSpacing;
@@ -995,19 +1050,17 @@ function createHexGridData(width, height, hexSize, noiseModule, tileMapping, see
                 const hexData = new HexData(id, centerX, centerY, col, row);
                 hexData.setStaggeredRow(staggeredRow);
 
-                // Generate and normalize noise values
-                hexData.baseElevation = normalizeToRange(generateEnvironmentalFactor(noiseModule, col, row, noiseParams.elevation), minNoiseValue.elevation, maxNoiseValue.elevation, noiseParams.elevation.min, noiseParams.elevation.max);
-                hexData.basePrecipitation = normalizeToRange(generateEnvironmentalFactor(noiseModule, col, row, noiseParams.precipitation), minNoiseValue.precipitation, maxNoiseValue.precipitation, noiseParams.precipitation.min, noiseParams.precipitation.max);
-                hexData.baseTemperature = normalizeToRange(generateEnvironmentalFactor(noiseModule, col, row, noiseParams.temperature), minNoiseValue.temperature, maxNoiseValue.temperature, noiseParams.temperature.min, noiseParams.temperature.max);
-                hexData.baseWindIntensity = normalizeToRange(generateEnvironmentalFactor(noiseModule, col, row, noiseParams.windIntensity), minNoiseValue.windIntensity, maxNoiseValue.windIntensity, noiseParams.windIntensity.min, noiseParams.windIntensity.max);
+                // Use the adjusted noise data
+                const noiseX = Math.floor(centerX / (width / 250));
+                const noiseY = Math.floor(centerY / (height / 250));
+                const index = noiseY * 250 + noiseX;
 
-                hexData.updateEnvironment(
-                    (random.random() - 0.5) * noiseParams.randomFactor,
-                    (random.random() - 0.5) * noiseParams.randomFactor,
-                    (random.random() - 0.5) * noiseParams.randomFactor,
-                    (random.random() - 0.5) * noiseParams.randomFactor
-                );
+                hexData.baseElevation = noiseData.elevation[index] || 0;
+                hexData.basePrecipitation = noiseData.precipitation[index] || 0;
+                hexData.baseTemperature = noiseData.temperature[index] || 0;
+                hexData.baseWindIntensity = noiseData.windIntensity[index] || 0;
 
+                hexData.updateEnvironment();
                 hexData.determineTile(tileMapping);
                 hexData.recordSimulation('initial');
 
@@ -1019,6 +1072,7 @@ function createHexGridData(width, height, hexSize, noiseModule, tileMapping, see
 
     return hexGrid;
 }
+
 
     // Function to update the display of a hex's data
     async function updateHexMap(elevationMod = 0, precipitationMod = 0, temperatureMod = 0, windMod = 0, simulationName = 'update') {
@@ -1089,30 +1143,24 @@ function createHexGridData(width, height, hexSize, noiseModule, tileMapping, see
     }
 
 function generateEnvironmentalFactor(noiseModule, x, y, params) {
-    let noiseValue;
+    const scaledX = x * params.scale;
+    const scaledY = y * params.scale;
 
     switch (params.noiseType) {
         case 'simplex':
-            noiseValue = (noiseModule.simplex(x * params.scale, y * params.scale) + 1) / 2; // Adjusting Simplex to [0, 1]
-            break;
+            return (noiseModule.simplex(scaledX, scaledY) + 1) / 2;
         case 'worley':
-            noiseValue = noiseModule.worley(x * params.scale, y * params.scale); // Worley is already [0, 1]
-            break;
+            return noiseModule.worley(scaledX, scaledY);
         case 'fractalPerlin':
-            noiseValue = (noiseModule.fractalPerlin(x * params.scale, y * params.scale, 0, params.octaves, params.lacunarity, params.gain) + 1) / 2; // Adjusting Fractal Perlin to [0, 1]
-            break;
+            return (noiseModule.fractalPerlin(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain) + 1) / 2;
         case 'fractalSimplex':
-            noiseValue = (noiseModule.fractalSimplex(x * params.scale, y * params.scale, 0, params.octaves, params.lacunarity, params.gain) + 1) / 2; // Adjusting Fractal Simplex to [0, 1]
-            break;
+            return (noiseModule.fractalSimplex(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain) + 1) / 2;
         case 'fractalWorley':
-            noiseValue = noiseModule.fractalWorley(x * params.scale, y * params.scale, 0, params.octaves, params.lacunarity, params.gain); // Worley is already [0, 1]
-            break;
+            return noiseModule.fractalWorley(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain);
         case 'perlin':
         default:
-            noiseValue = (noiseModule.perlin(x * params.scale, y * params.scale) + 1) / 2; // Adjusting Perlin to [0, 1]
+            return (noiseModule.perlin(scaledX, scaledY) + 1) / 2;
     }
-
-    return noiseValue;
 }
 
 
@@ -1123,6 +1171,66 @@ function generateEnvironmentalFactor(noiseModule, x, y, params) {
         return hexGrid.map(hex => hex.getSimulationResult(simulationName));
     }
 
+//function to create new scene directory for generated noise if needed
+async function ensureSceneDirectory(sceneId) {
+    const baseDir = 'modules/procedural-hex-maps/generatednoise';
+    const sceneDir = `${baseDir}/${sceneId}`;
+
+    try {
+        const baseDirExists = await FilePicker.browse('data', baseDir);
+        if (!baseDirExists.dirs.includes(sceneDir)) {
+            await FilePicker.createDirectory('data', sceneDir);
+        }
+    } catch (error) {
+        // Create the directories if they don't exist
+        await FilePicker.createDirectory('data', baseDir);
+        await FilePicker.createDirectory('data', sceneDir);
+    }
+
+    return sceneDir;
+}
+
+async function saveNoiseData(sceneId, factor, noiseData, params) {
+    console.log(`Attempting to save noise data for ${factor}`);
+    const sceneDir = await ensureSceneDirectory(sceneId);
+    console.log(`Scene directory: ${sceneDir}`);
+    const fileName = `${factor}_noise.json`;
+    const filePath = `${sceneDir}/${fileName}`;
+    console.log(`File path: ${filePath}`);
+    const fileContent = JSON.stringify({ noiseData, params });
+
+    try {
+        console.log(`Uploading file for ${factor}`);
+        const file = new File([fileContent], fileName, { type: 'application/json' });
+        await FilePicker.upload('data', sceneDir, file);
+        console.log(`Successfully saved noise data for ${factor} to ${filePath}`);
+    } catch (error) {
+        console.error(`Error saving noise data for ${factor}:`, error);
+        throw error;
+    }
+}
+
+
+//function to load noise data that has been saved
+async function loadNoiseData(sceneId, factor) {
+    const sceneDir = await ensureSceneDirectory(sceneId);
+    const filePath = `${sceneDir}/${factor}_noise.json`;
+
+    try {
+        const response = await fetch(filePath);
+        if (response.ok) {
+            const data = await response.json();
+            console.log(`Loaded noise data for ${factor} from ${filePath}`);
+            return data;
+        } else {
+            console.error(`Failed to load noise data for ${factor}: ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error(`Error loading noise data for ${factor}:`, error);
+    }
+
+    return null;
+}
 
     // Function to load tile mapping from CSV
     async function loadTileMapping() {
@@ -1630,6 +1738,7 @@ function generateEnvironmentalFactor(noiseModule, x, y, params) {
         normalizedValue = Math.max(newMin, Math.min(newMax, normalizedValue));
         return normalizedValue;
     }
+
 
 
 

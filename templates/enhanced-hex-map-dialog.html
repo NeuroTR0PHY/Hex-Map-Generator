@@ -9,7 +9,7 @@
         </select>
         <label>
             Scale:
-            <input type="number" id="{{this}}-scale" value="0.1" step="0.01" style="width: 100%;">
+            <input type="number" id="{{this}}-scale" value="0.01" step="0.01" style="width: 100%;">
         </label>
         <label>
             Octaves:
@@ -25,7 +25,7 @@
         </label>
         <label>
             Min:
-            <input type="number" id="{{this}}-min" value="1" style="width: 100%;">
+            <input type="number" id="{{this}}-min" value="0" style="width: 100%;">
         </label>
         <label>
             Max:
@@ -37,10 +37,10 @@
         </label>
         <label>
             <input type="checkbox" id="{{this}}-normalize" />
-            Normalize noise values (stretch to full 0-1 range)
+            Normalize noise values (stretch to specified range (min to max))
         </label>
         <button id="preview-{{this}}">Preview {{this}} Noise</button>
-        <canvas id="{{this}}-preview" width="200" height="200" style="border:1px solid #000000;"></canvas>
+        <canvas id="{{this}}-preview" width="250" height="250" style="border:1px solid #000000;"></canvas>
     </div>
     {{/each}}
 </div>
@@ -51,7 +51,7 @@
     </label>
     <label>
         Random Factor:
-        <input type="number" id="randomFactor" value="2" step="0.1" style="width: 100%;">
+        <input type="number" id="randomFactor" value="0" step="0.1" style="width: 100%;">
     </label>
     <label>
         Main Seed:
