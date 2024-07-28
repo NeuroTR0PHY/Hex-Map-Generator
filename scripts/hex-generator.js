@@ -19,6 +19,8 @@ Hooks.once('ready', () => {
 
     // If you want to ensure the settings are set for the current scene at startup, you can add this:
     console.log("Scene-specific settings registered for scene:", sceneId);
+    tileMappings = game.settings.get('procedural-hex-maps', 'tileMappings');
+
 });
 
 Hooks.once('init', () => {
@@ -32,6 +34,22 @@ Hooks.once('init', () => {
             type: Object
         });
     }
+
+    game.settings.register('procedural-hex-maps', 'tileMappings', {
+        name: "Tile Mappings",
+        scope: "world",
+        config: false,
+        type: Object,
+        default: []
+    });
+
+    game.settings.register('procedural-hex-maps', 'savedConfigurations', {
+        name: "Saved Configurations",
+        scope: "world",
+        config: false,
+        type: Object,
+        default: {}
+    });
 });
 
 // Button controls
@@ -77,6 +95,11 @@ Hooks.on('getSceneControlButtons', (controls) => {
                 name: "toggleHexInfo",
                 title: "Toggle Hex Info",
                 icon: "fas fa-info-circle",
+            },
+            {
+                name: "settings",
+                title: "Hex Map Settings",
+                icon: "fas fa-cog",
             }
         ],
         activeTool: "generate"
@@ -305,6 +328,10 @@ Hooks.on('renderSceneControls', (app, html, data) => {
         if (!showHexInfo) {
             updateHexInfoBox(''); // Clear the content when hiding
         }
+    });
+    html.find('.control-tool[data-tool="settings"]').click(ev => {
+        console.log('Hex Map Settings clicked');
+        showHexMapSettings();
     });
 });
 
@@ -796,7 +823,8 @@ async function generateEnhancedHexMap(html) {
         const seed = parseInt(html.find('#main-seed').val()) || Math.floor(Math.random() * 1000000);
         console.log(`Generating enhanced hex map: ${width}x${height}, hex size: ${hexSize}, seed: ${seed}`);
 
-        const tileMapping = await loadTileMapping();
+        // Use the tileMappings from the settings instead of loading from CSV
+        const tileMapping = game.settings.get('procedural-hex-maps', 'tileMappings');
         const hexGrid = createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
 
         const placedTiles = hexGrid.map(hex => ({
@@ -808,7 +836,7 @@ async function generateEnhancedHexMap(html) {
             sort: hex.staggeredRow,
             flags: { hexTile: true, hexId: hex.id },
             texture: {
-                src: `modules/procedural-hex-maps/tiles/${getTileImage(hex, tileMapping)}`,
+                src: hex.tilePath, // Use the tilePath from the new mapping
                 scaleX: 2,
                 scaleY: 2,
                 offsetX: 0,
@@ -825,8 +853,6 @@ async function generateEnhancedHexMap(html) {
         });
 
         await canvas.scene.setFlag("procedural-hex-maps", "hexGridData", hexGrid);
-
-        // No need to call updateHexTilesWithIds() as we've already set the correct IDs
 
         addHexHoverListeners();
         console.log('All tiles placed and images assigned');
@@ -934,10 +960,8 @@ class HexData {
         this.notes = '';
 
         // Tile information
-        this.fullTileName = '';
-        this.tileType = '';
-        this.tileModifier = '';
-        this.tileVariant = '';
+        this.tilePath = '';
+        this.tileName = '';
 
         // Simulation history
         this.simulationHistory = [];
@@ -1017,23 +1041,19 @@ class HexData {
             this.elevation >= tile.elevationLow && this.elevation <= tile.elevationHigh &&
             this.temperature >= tile.temperatureLow && this.temperature <= tile.temperatureHigh &&
             this.precipitation >= tile.precipitationLow && this.precipitation <= tile.precipitationHigh &&
-            this.windIntensity >= tile.windLow && this.windIntensity <= tile.windHigh &&
-            tile.settlement === 0
+            this.windIntensity >= tile.windIntensityLow && this.windIntensity <= tile.windIntensityHigh
         );
 
         if (matchingTiles.length > 0) {
             // Randomly select a tile from all matching tiles
             const selectedTile = matchingTiles[Math.floor(Math.random() * matchingTiles.length)];
-            this.tileType = selectedTile.tileType;
-            this.tileModifier = selectedTile.modifier;
-            this.tileVariant = selectedTile.variant;
-            this.fullTileName = selectedTile.fullTileName;
-            console.log(`Selected tile for hex ${this.id}:`, selectedTile.fullTileName);
+            this.tilePath = selectedTile.tilePath;
+            this.tileName = selectedTile.tileName;
+            console.log(`Selected tile for hex ${this.id}:`, selectedTile.tileName);
         } else {
             console.warn(`No matching tile found for hex ${this.id}. Using default tile.`);
-            this.tileType = 'Base';
-            this.tileModifier = 'blank';
-            this.tileVariant = '';
+            this.tilePath = 'modules/procedural-hex-maps/tiles/Hex_-_Base_(blank).png';
+            this.tileName = 'Default Blank Tile';
         }
     }
 
@@ -1050,9 +1070,8 @@ class HexData {
             vegetationDensity: this.vegetationDensity,
             isWater: this.isWater,
             movementCost: this.movementCost,
-            tileType: this.tileType,
-            tileModifier: this.tileModifier,
-            tileVariant: this.tileVariant
+            tilePath: this.tilePath,
+            tileName: this.tileName
         });
     }
 
@@ -1764,4 +1783,222 @@ function normalizeValue(value, min, max, newMin, newMax) {
     // Ensure the value is within the newMin and newMax bounds
     normalizedValue = Math.max(newMin, Math.min(newMax, normalizedValue));
     return normalizedValue;
+}
+
+let tileMappings = [];
+
+function showHexMapSettings() {
+    const windowHeight = window.innerHeight;
+    const dialogHeight = Math.floor(windowHeight * 0.8);
+
+    const content = `
+        <style>
+            .hex-settings-dialog { 
+                height: ${dialogHeight}px;
+                display: flex;
+                flex-direction: column;
+            }
+            .mapping-item { margin-bottom: 10px; padding: 5px; border: 1px solid #ccc; }
+            .mapping-item img { vertical-align: middle; margin-right: 10px; }
+            .range-slider { display: flex; align-items: center; margin: 5px 0; }
+            .range-slider label { width: 100px; }
+            .range-slider input[type="range"] { flex-grow: 1; margin: 0 10px; }
+            .range-slider span { width: 30px; text-align: right; }
+            .mapping-header { cursor: pointer; display: flex; align-items: center; }
+            .mapping-header i { margin-right: 10px; }
+            .mapping-content { display: none; }
+            .expanded .mapping-content { display: block; }
+            #tile-mappings-list { flex-grow: 1; overflow-y: auto; }
+            .dialog-buttons { margin-top: auto; }
+        </style>
+        <div class="hex-settings-dialog">
+            <h2>Hex Map Tile Mappings</h2>
+            <div id="tile-mappings-list"></div>
+            <button id="add-mapping"><i class="fas fa-plus"></i> Add New Mapping</button>
+            <hr>
+            <div>
+                <label for="config-name">Configuration Name:</label>
+                <input type="text" id="config-name">
+                <button id="save-config">Save Configuration</button>
+            </div>
+            <div id="saved-configs"></div>
+        </div>
+    `;
+
+    new Dialog({
+        title: "Hex Map Settings",
+        content: content,
+        buttons: {
+            close: {
+                icon: '<i class="fas fa-times"></i>',
+                label: "Close",
+                callback: () => {
+                    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+                }
+            }
+        },
+        render: (html) => {
+            displayTileMappings(html);
+            html.find('#add-mapping').click(addNewMapping);
+            html.find('#save-config').click(() => saveConfiguration(html));
+            displaySavedConfigurations(html);
+
+            // Ensure the dialog takes up the full height
+            html.closest('.app').css('height', `${dialogHeight}px`);
+
+            // Reduce the height of the close button
+            html.closest('.app').find('.dialog-buttons').css('height', '30px');
+        },
+        width: 600,
+        height: dialogHeight,
+    }, {
+        resizable: false
+    }).render(true);
+}
+
+function displayTileMappings(html) {
+    const list = html.find('#tile-mappings-list');
+    list.empty();
+    tileMappings.forEach((mapping, index) => {
+        const item = $(`
+            <div class="mapping-item" data-index="${index}">
+                <div class="mapping-header">
+                    <i class="fas fa-chevron-right"></i>
+                    <img src="${mapping.tilePath}" width="50" height="50">
+                    <span>${mapping.tileName}</span>
+                </div>
+                <div class="mapping-content">
+                    <button class="delete-mapping"><i class="fas fa-trash"></i> Delete</button>
+                    <div class="range-slider">
+                        <label>Elevation:</label>
+                        <input type="range" class="elevation-low" min="0" max="10" value="${mapping.elevationLow}">
+                        <span class="elevation-low-value">${mapping.elevationLow}</span>
+                        <input type="range" class="elevation-high" min="0" max="10" value="${mapping.elevationHigh}">
+                        <span class="elevation-high-value">${mapping.elevationHigh}</span>
+                    </div>
+                    <div class="range-slider">
+                        <label>Precipitation:</label>
+                        <input type="range" class="precipitation-low" min="0" max="10" value="${mapping.precipitationLow}">
+                        <span class="precipitation-low-value">${mapping.precipitationLow}</span>
+                        <input type="range" class="precipitation-high" min="0" max="10" value="${mapping.precipitationHigh}">
+                        <span class="precipitation-high-value">${mapping.precipitationHigh}</span>
+                    </div>
+                    <div class="range-slider">
+                        <label>Temperature:</label>
+                        <input type="range" class="temperature-low" min="0" max="10" value="${mapping.temperatureLow}">
+                        <span class="temperature-low-value">${mapping.temperatureLow}</span>
+                        <input type="range" class="temperature-high" min="0" max="10" value="${mapping.temperatureHigh}">
+                        <span class="temperature-high-value">${mapping.temperatureHigh}</span>
+                    </div>
+                    <div class="range-slider">
+                        <label>Wind Intensity:</label>
+                        <input type="range" class="wind-intensity-low" min="0" max="10" value="${mapping.windIntensityLow}">
+                        <span class="wind-intensity-low-value">${mapping.windIntensityLow}</span>
+                        <input type="range" class="wind-intensity-high" min="0" max="10" value="${mapping.windIntensityHigh}">
+                        <span class="wind-intensity-high-value">${mapping.windIntensityHigh}</span>
+                    </div>
+                </div>
+            </div>
+        `);
+        list.append(item);
+    });
+    html.find('.delete-mapping').click(deleteMapping);
+    html.find('input[type="range"]').on('input', updateRangeValue);
+    html.find('input[type="range"]').on('change', updateMapping);
+    html.find('.mapping-header').click(toggleMappingContent);
+}
+
+function toggleMappingContent(event) {
+    const $header = $(event.currentTarget);
+    const $item = $header.closest('.mapping-item');
+    $item.toggleClass('expanded');
+    $header.find('i').toggleClass('fa-chevron-right fa-chevron-down');
+}
+
+function updateRangeValue(event) {
+    const $input = $(event.currentTarget);
+    const value = $input.val();
+    $input.next('span').text(value);
+}
+
+function updateMapping(event) {
+    const $input = $(event.currentTarget);
+    const index = $input.closest('.mapping-item').data('index');
+    const mapping = tileMappings[index];
+    const field = $input.attr('class').split('-')[0] + $input.attr('class').split('-')[1].charAt(0).toUpperCase() + $input.attr('class').split('-')[1].slice(1);
+    mapping[field] = parseInt($input.val());
+}
+
+function addNewMapping() {
+    new FilePicker({
+        type: "image",
+        current: "modules/procedural-hex-maps/tiles",
+        callback: (path) => {
+            const newMapping = {
+                tilePath: path,
+                tileName: path.split('/').pop(),
+                elevationLow: 0,
+                elevationHigh: 10,
+                precipitationLow: 0,
+                precipitationHigh: 10,
+                temperatureLow: 0,
+                temperatureHigh: 10,
+                windIntensityLow: 0,
+                windIntensityHigh: 10
+            };
+            tileMappings.push(newMapping);
+            displayTileMappings($('.dialog-content'));
+        }
+    }).render(true);
+}
+
+function deleteMapping(event) {
+    const index = $(event.currentTarget).closest('.mapping-item').data('index');
+    tileMappings.splice(index, 1);
+    displayTileMappings($('.dialog-content'));
+}
+
+function saveConfiguration(html) {
+    const configName = html.find('#config-name').val();
+    if (!configName) {
+        ui.notifications.error("Please enter a name for the configuration.");
+        return;
+    }
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+    savedConfigs[configName] = JSON.parse(JSON.stringify(tileMappings));
+    game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
+    displaySavedConfigurations(html);
+}
+
+function displaySavedConfigurations(html) {
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+    const container = html.find('#saved-configs');
+    container.empty();
+    Object.keys(savedConfigs).forEach(configName => {
+        const configItem = $(`
+            <div>
+                <span>${configName}</span>
+                <button class="load-config" data-name="${configName}">Load</button>
+                <button class="delete-config" data-name="${configName}">Delete</button>
+            </div>
+        `);
+        container.append(configItem);
+    });
+    html.find('.load-config').click(loadConfiguration);
+    html.find('.delete-config').click(deleteConfiguration);
+}
+
+function loadConfiguration(event) {
+    const configName = $(event.currentTarget).data('name');
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+    tileMappings = JSON.parse(JSON.stringify(savedConfigs[configName]));
+    displayTileMappings($('.dialog-content'));
+}
+
+function deleteConfiguration(event) {
+    const configName = $(event.currentTarget).data('name');
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+    delete savedConfigs[configName];
+    game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
+    displaySavedConfigurations($('.dialog-content'));
 }
