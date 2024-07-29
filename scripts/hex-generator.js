@@ -258,6 +258,7 @@ function handleHexHover(event) {
         console.log(`Biome: ${hexData.biomeType}`);
         console.log(`Vegetation Density: ${hexData.vegetationDensity}`);
         console.log(`Humidity: ${hexData.humidity}`);
+        console.log(`Moisture: ${hexData.moisture}`);
 
         const hexInfoContent = `
         <div style="display: flex; flex-wrap: wrap;">
@@ -272,6 +273,7 @@ function handleHexHover(event) {
             <div style="width: 50%;"><strong>Vegetation Density:</strong> ${hexData.vegetationDensity}</div>
             <div style="width: 50%;"><strong>isWater:</strong> ${hexData.isWater}</div>
             <div style="width: 50%;"><strong>Water Depth:</strong> ${hexData.waterDepth}</div>
+            <div style="width: 50%;"><strong>Moisture:</strong> ${hexData.moisture}</div>
         </div>
             `;
         updateHexInfoBox(hexInfoContent);
@@ -598,18 +600,133 @@ async function showEnhancedHexMapDialog() {
             for (const factor of ['elevation', 'precipitation', 'temperature', 'windIntensity']) {
                 html.find(`#preview-${factor}`).on('click', () => previewNoise(html, factor));
             }
-            // Set the width to 70% of the screen width
+            html.find('#preview-moisture').on('click', () => previewMoisture(html));
+            html.find('#preview-wind-direction').on('click', () => previewWindDirection(html));
+            html.find('#preview-cloud-cover').on('click', () => previewCloudCover(html));
+
             const dialogElement = html.closest('.app');
             dialogElement.css({
                 'width': '70%',
-                'left': '15%', // Center the dialog on the screen
-                'max-width': 'none' // Ensure it doesn't have a max-width limit
+                'left': '15%',
+                'max-width': 'none'
             });
         },
         default: "generate",
         width: 800,
         height: 800
     }).render(true);
+}
+
+async function previewMoisture(html) {
+    const hexGrid = await generateTemporaryHexGrid(html);
+    generateMoistureMap(hexGrid);
+    const previewCanvas = html.find('#moisture-preview')[0];
+    renderPreview(previewCanvas, hexGrid, hex => hex.moisture);
+}
+
+async function previewWindDirection(html) {
+    const hexGrid = await generateTemporaryHexGrid(html);
+    generateWindPatterns(hexGrid);
+    const previewCanvas = html.find('#wind-direction-preview')[0];
+    renderPreview(previewCanvas, hexGrid, hex => hex.windDirection, true);
+}
+
+async function previewCloudCover(html) {
+    const hexGrid = await generateTemporaryHexGrid(html);
+    const previewCanvas = html.find('#cloud-cover-preview')[0];
+    renderPreview(previewCanvas, hexGrid, hex => hex.cloudCover);
+}
+
+async function generateTemporaryHexGrid(html) {
+    const width = 250;
+    const height = 250;
+    const hexSize = 10;
+    const noiseData = {};
+    const factors = ['elevation', 'precipitation', 'temperature', 'windIntensity'];
+
+    for (const factor of factors) {
+        const params = getNoiseParams(html, factor);
+        const noiseModule = new NoiseModule();
+        noiseModule.setSeed(params.seed);
+        noiseData[factor] = generateUnifiedNoise(width, height, params, noiseModule);
+    }
+
+    const seed = parseInt(html.find('#main-seed').val()) || Math.floor(Math.random() * 1000000);
+
+    // Load the current tile mappings
+    const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", "currentTileMappingConfig");
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+    let tileMapping;
+    if (currentConfigName && savedConfigs[currentConfigName]) {
+        tileMapping = JSON.parse(JSON.stringify(savedConfigs[currentConfigName]));
+    } else {
+        tileMapping = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
+    }
+
+    tileMapping = updateTileMappingStructure(tileMapping);
+
+    console.log("Updated tile mapping used for preview:", tileMapping);
+
+    return createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
+}
+
+function renderPreview(canvas, hexGrid, valueFunction, isDirectional = false) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const imageData = ctx.createImageData(width, height);
+
+    const values = hexGrid.map(valueFunction);
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+
+    for (let i = 0; i < hexGrid.length; i++) {
+        const hex = hexGrid[i];
+        const value = valueFunction(hex);
+        const normalizedValue = (value - minValue) / (maxValue - minValue);
+
+        let r, g, b;
+        if (isDirectional) {
+            const hue = (value / 8) * 360; // 8 directions, so we multiply by 360/8
+            [r, g, b] = hslToRgb(hue / 360, 1, 0.5);
+        } else {
+            const color = Math.floor(normalizedValue * 255);
+            r = g = b = color;
+        }
+
+        const index = (Math.floor(hex.y) * width + Math.floor(hex.x)) * 4;
+        imageData.data[index] = r;
+        imageData.data[index + 1] = g;
+        imageData.data[index + 2] = b;
+        imageData.data[index + 3] = 255;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+}
+
+function hslToRgb(h, s, l) {
+    let r, g, b;
+
+    if (s === 0) {
+        r = g = b = l;
+    } else {
+        const hue2rgb = (p, q, t) => {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+            return p;
+        };
+
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1 / 3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1 / 3);
+    }
+
+    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
 
@@ -842,16 +959,18 @@ async function generateEnhancedHexMap(html) {
         const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", "currentTileMappingConfig");
         const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
         let tileMapping;
-
         if (currentConfigName && savedConfigs[currentConfigName]) {
             tileMapping = JSON.parse(JSON.stringify(savedConfigs[currentConfigName]));
         } else {
             tileMapping = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
         }
 
-        console.log("Tile mapping used for generation:", tileMapping);
+        tileMapping = updateTileMappingStructure(tileMapping);
+
+        console.log("Updated tile mapping used for generation:", tileMapping);
 
         const hexGrid = createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
+
 
         const placedTiles = hexGrid.map(hex => ({
             x: hex.x - (hexSize + 10) / 2 + (hex.selectedTile?.xOffset || 0),
@@ -948,6 +1067,11 @@ function createHexGridData(width, height, hexSize, noiseData, tileMapping, seed)
                 hexData.baseTemperature = noiseData.temperature[index] || 0;
                 hexData.baseWindIntensity = noiseData.windIntensity[index] || 0;
 
+                hexData.windDirection = Math.floor(random.random() * 8);
+                hexData.updateEnvironment();
+
+
+
                 // Add tags if needed (example)
                 hexData.tags = ['forest', 'snow']; // Example tags, adjust as needed
 
@@ -967,9 +1091,80 @@ function createHexGridData(width, height, hexSize, noiseData, tileMapping, seed)
                 hexGrid.push(hexData);
             }
         }
+
     }
+    // Generate wind patterns
+    generateWindPatterns(hexGrid);
+
+    // Generate moisture map
+    generateMoistureMap(hexGrid);
 
     return hexGrid;
+}
+
+function generateWindPatterns(hexGrid) {
+    for (let i = 0; i < hexGrid.length; i++) {
+        const hex = hexGrid[i];
+        const neighbors = getNeighbors(hex, hexGrid);
+
+        // Find the neighbor with the highest temperature difference
+        let maxTempDiff = 0;
+        let targetDirection = hex.windDirection;
+
+        neighbors.forEach((neighbor, index) => {
+            const tempDiff = Math.abs(neighbor.temperature - hex.temperature);
+            if (tempDiff > maxTempDiff) {
+                maxTempDiff = tempDiff;
+                targetDirection = index;
+            }
+        });
+
+        // Wind can only change by 45 degrees (1 step) per hex
+        const directionDiff = (targetDirection - hex.windDirection + 8) % 8;
+        if (directionDiff > 4) {
+            hex.windDirection = (hex.windDirection - 1 + 8) % 8;
+        } else if (directionDiff < 4) {
+            hex.windDirection = (hex.windDirection + 1) % 8;
+        }
+
+        // Adjust wind intensity based on temperature gradient and elevation
+        hex.windIntensity = Math.min(10, hex.windIntensity + maxTempDiff * 0.5);
+        hex.windIntensity = Math.max(0, hex.windIntensity - hex.elevation * 0.2);
+    }
+}
+
+function generateMoistureMap(hexGrid) {
+    const iterations = 5; // Number of rainfall simulations
+
+    for (let iter = 0; iter < iterations; iter++) {
+        for (let i = 0; i < hexGrid.length; i++) {
+            const hex = hexGrid[i];
+            let rainAmount = hex.precipitation * 0.2; // 20% of precipitation becomes runoff
+
+            while (rainAmount > 0) {
+                hex.moisture += rainAmount * 0.1; // 10% of runoff is absorbed
+                rainAmount *= 0.9; // Remaining 90% continues flowing
+
+                const neighbors = getNeighbors(hex, hexGrid);
+                const lowerNeighbors = neighbors.filter(n => n.elevation < hex.elevation);
+
+                if (lowerNeighbors.length === 0) break; // Water pools here
+
+                const nextHex = lowerNeighbors.reduce((a, b) => a.elevation < b.elevation ? a : b);
+                hex = nextHex;
+            }
+        }
+    }
+
+    // Normalize moisture values
+    const moistureValues = hexGrid.map(hex => hex.moisture);
+    const minMoisture = Math.min(...moistureValues);
+    const maxMoisture = Math.max(...moistureValues);
+
+    hexGrid.forEach(hex => {
+        hex.moisture = (hex.moisture - minMoisture) / (maxMoisture - minMoisture) * 10;
+        hex.isWater = hex.moisture > 7.5; // Threshold for water tiles
+    });
 }
 
 
@@ -1003,7 +1198,9 @@ class HexData {
 
         // Terrain characteristics
         this.humidity = 0;
-        this.windDirection = 0;
+        this.cloudCover = 0;
+        this.windDirection = 0; // 0-7, representing 45-degree increments
+        this.moisture = 0;
 
         // Biome and vegetation
         this.biomeType = '';
@@ -1069,48 +1266,59 @@ class HexData {
     }
 
     updateEnvironment(elevationMod = 0, precipitationMod = 0, temperatureMod = 0, windMod = 0) {
-        this.elevation = Math.max(0, Math.min(10, this.baseElevation + elevationMod));
-        this.precipitation = Math.max(0, Math.min(10, this.basePrecipitation + precipitationMod));
-        this.temperature = Math.max(0, Math.min(10, this.baseTemperature + temperatureMod));
-        this.windIntensity = Math.max(0, Math.min(10, this.baseWindIntensity + windMod));
-        this.isWater = this.elevation <= 2; // Assuming water level is 2
+        this.elevation = this.capValue(this.baseElevation + elevationMod);
+        this.precipitation = this.capValue(this.basePrecipitation + precipitationMod);
+        this.temperature = this.capValue(this.baseTemperature + temperatureMod);
+        this.windIntensity = this.capValue(this.baseWindIntensity + windMod);
 
-        console.log(`Hex ${this.id} updated environment:`, {
-            elevation: this.elevation,
-            precipitation: this.precipitation,
-            temperature: this.temperature,
-            windIntensity: this.windIntensity,
-            isWater: this.isWater
-        });
+        // Adjust temperature based on elevation (only if it doesn't push it out of bounds)
+        const tempAdjustment = this.elevation * 0.5;
+        if (this.temperature - tempAdjustment >= 0) {
+            this.temperature -= tempAdjustment;
+        }
+
+        // Adjust precipitation based on elevation (orographic effect)
+        this.precipitation = this.capValue(this.precipitation + this.elevation * 0.3);
+
+        this.isWater = this.elevation <= 2;
 
         this.updateDerivedCharacteristics();
     }
 
     updateDerivedCharacteristics() {
-        this.humidity = (this.precipitation * 2 + (10 - this.temperature)) / 3;
-        this.vegetationDensity = (this.precipitation + this.temperature - this.elevation / 2) / 2;
+        this.humidity = this.capValue((this.precipitation * 2 + (10 - this.temperature)) / 3);
+        this.cloudCover = this.capValue(this.precipitation * 0.8 + this.humidity * 0.2);
+        this.moisture = this.capValue((this.precipitation + this.humidity + (10 - this.elevation)) / 3);
+        console.log(`Hex ${this.id} moisture calculated: ${this.moisture}`);
+        this.vegetationDensity = this.capValue(Math.max(0, (this.moisture + this.temperature - this.elevation / 2) / 2));
         if (this.isWater) this.vegetationDensity = 0;
         this.determineBiomeType();
         this.updateMovementCost();
     }
 
+    capValue(value) {
+        return Math.max(0, Math.min(10, value));
+    }
+
     determineBiomeType() {
         if (this.isWater) {
-            this.biomeType = this.elevation === 1 ? 'ocean' : 'lake';
+            this.biomeType = this.elevation < 2 ? 'ocean' : 'lake';
         } else if (this.elevation > 8) {
-            this.biomeType = 'mountain';
-        } else if (this.temperature < 3) {
+            this.biomeType = this.temperature < 2 ? 'snowy_mountains' : 'mountains';
+        } else if (this.temperature < 2) {
             this.biomeType = 'tundra';
-        } else if (this.precipitation < 3) {
+        } else if (this.moisture < 2) {
             this.biomeType = 'desert';
-        } else if (this.temperature > 7 && this.precipitation > 7) {
-            this.biomeType = 'tropical rainforest';
-        } else if (this.temperature > 7) {
+        } else if (this.temperature > 8 && this.moisture > 8) {
+            this.biomeType = 'tropical_rainforest';
+        } else if (this.temperature > 8) {
             this.biomeType = 'savanna';
-        } else if (this.precipitation > 7) {
-            this.biomeType = 'temperate rainforest';
+        } else if (this.moisture > 8) {
+            this.biomeType = 'temperate_rainforest';
+        } else if (this.temperature > 5 && this.moisture > 5) {
+            this.biomeType = 'temperate_forest';
         } else {
-            this.biomeType = 'temperate forest';
+            this.biomeType = 'grassland';
         }
     }
 
@@ -1123,24 +1331,29 @@ class HexData {
     }
 
     determineTile(tileMapping) {
-        console.log('determineTile called');
-        console.log('this:', {
+        console.log('determineTile called for hex', this.id);
+        console.log('Hex data:', {
             elevation: this.elevation,
             temperature: this.temperature,
             precipitation: this.precipitation,
-            windIntensity: this.windIntensity
+            windIntensity: this.windIntensity,
+            moisture: this.moisture
         });
         console.log('Tile mapping:', tileMapping);
 
         const matchingMappings = tileMapping.filter(mapping => {
             const elevationMatch = this.elevation >= mapping.elevationLow && this.elevation <= mapping.elevationHigh;
             const temperatureMatch = this.temperature >= mapping.temperatureLow && this.temperature <= mapping.temperatureHigh;
-            const precipitationMatch = this.precipitation >= mapping.precipitationLow && this.precipitation <= mapping.precipitationHigh;
+            const moistureMatch = this.moisture >= (mapping.moistureLow ?? 0) && this.moisture <= (mapping.moistureHigh ?? 10);
             const windMatch = this.windIntensity >= mapping.windIntensityLow && this.windIntensity <= mapping.windIntensityHigh;
 
-            console.log(`Mapping ${mapping.name}: elevation ${elevationMatch}, temperature ${temperatureMatch}, precipitation ${precipitationMatch}, wind ${windMatch}`);
+            console.log(`Mapping ${mapping.name}:`);
+            console.log(`  Elevation: ${this.elevation} in [${mapping.elevationLow}, ${mapping.elevationHigh}] = ${elevationMatch}`);
+            console.log(`  Temperature: ${this.temperature} in [${mapping.temperatureLow}, ${mapping.temperatureHigh}] = ${temperatureMatch}`);
+            console.log(`  Moisture: ${this.moisture} in [${mapping.moistureLow ?? 0}, ${mapping.moistureHigh ?? 10}] = ${moistureMatch}`);
+            console.log(`  Wind: ${this.windIntensity} in [${mapping.windIntensityLow}, ${mapping.windIntensityHigh}] = ${windMatch}`);
 
-            return elevationMatch && temperatureMatch && precipitationMatch && windMatch;
+            return elevationMatch && temperatureMatch && moistureMatch && windMatch;
         });
 
         console.log('Matching mappings:', matchingMappings);
@@ -1158,7 +1371,7 @@ class HexData {
             this.selectedTile = null;
         }
     }
-}   
+}
 
 
 // Function to create hex grid data
@@ -1209,6 +1422,7 @@ async function generateEnhancedHexMap(html) {
         console.log("Tile mapping used for generation:", tileMapping);
 
         const hexGrid = createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
+
 
         const placedTiles = hexGrid.map(hex => ({
             x: hex.x - (hexSize + 10) / 2 + (hex.selectedTile?.xOffset || 0),
@@ -1859,8 +2073,9 @@ function showHexMapSettings() {
         tileMappings = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
     }
 
-    console.log("Tile mappings displayed in settings:", tileMappings);
+    tileMappings = updateTileMappingStructure(tileMappings);
 
+    console.log("Tile mappings loaded in settings:", JSON.parse(JSON.stringify(tileMappings)));
 
     const windowHeight = window.innerHeight;
     const dialogHeight = Math.floor(windowHeight * 0.8);
@@ -1952,6 +2167,9 @@ function displayTileMappings(html, tileMappings) {
 
     if (Array.isArray(tileMappings) && tileMappings.length > 0) {
         tileMappings.forEach((mapping, index) => {
+            console.log(`Displaying mapping: ${mapping.name}`);
+            console.log(`Wind Intensity: Low ${mapping.windIntensityLow}, High ${mapping.windIntensityHigh}`);
+
             const item = $(`
                 <div class="mapping-item" data-index="${index}">
                     <div class="mapping-header">
@@ -1973,11 +2191,11 @@ function displayTileMappings(html, tileMappings) {
                             <span class="elevation-high-value">${mapping.elevationHigh.toFixed(1)}</span>
                         </div>
                         <div class="range-slider">
-                            <label>Precipitation:</label>
-                            <input type="range" class="precipitation-low" min="0" max="10" step="0.1" value="${mapping.precipitationLow.toFixed(1)}">
-                            <span class="precipitation-low-value">${mapping.precipitationLow.toFixed(1)}</span>
-                            <input type="range" class="precipitation-high" min="0" max="10" step="0.1" value="${mapping.precipitationHigh.toFixed(1)}">
-                            <span class="precipitation-high-value">${mapping.precipitationHigh.toFixed(1)}</span>
+                            <label>Moisture:</label>
+                            <input type="range" class="moisture-low" min="0" max="10" step="0.1" value="${mapping.moistureLow.toFixed(1)}">
+                            <span class="moisture-low-value">${mapping.moistureLow.toFixed(1)}</span>
+                            <input type="range" class="moisture-high" min="0" max="10" step="0.1" value="${mapping.moistureHigh.toFixed(1)}">
+                            <span class="moisture-high-value">${mapping.moistureHigh.toFixed(1)}</span>
                         </div>
                         <div class="range-slider">
                             <label>Temperature:</label>
@@ -1988,10 +2206,10 @@ function displayTileMappings(html, tileMappings) {
                         </div>
                         <div class="range-slider">
                             <label>Wind Intensity:</label>
-                            <input type="range" class="wind-intensity-low" min="0" max="10" step="0.1" value="${mapping.windIntensityLow.toFixed(1)}">
-                            <span class="wind-intensity-low-value">${mapping.windIntensityLow.toFixed(1)}</span>
-                            <input type="range" class="wind-intensity-high" min="0" max="10" step="0.1" value="${mapping.windIntensityHigh.toFixed(1)}">
-                            <span class="wind-intensity-high-value">${mapping.windIntensityHigh.toFixed(1)}</span>
+                            <input type="range" class="wind-intensity-low" min="0" max="10" step="0.1" value="${mapping.windIntensityLow !== undefined ? mapping.windIntensityLow.toFixed(1) : '0.0'}">
+                            <span class="wind-intensity-low-value">${mapping.windIntensityLow !== undefined ? mapping.windIntensityLow.toFixed(1) : '0.0'}</span>
+                            <input type="range" class="wind-intensity-high" min="0" max="10" step="0.1" value="${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}">
+                            <span class="wind-intensity-high-value">${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}</span>
                         </div>
                         <div class="tag-list">
                             <label>Tags:</label>
@@ -2036,6 +2254,25 @@ function displayTileMappings(html, tileMappings) {
     list.find('.mapping-item').on('dragover', handleDragOver);
     list.find('.mapping-item').on('dragleave', handleDragLeave);
     list.find('.mapping-item').on('drop', event => handleDrop(event, tileMappings));
+}
+
+function updateTileMappingStructure(tileMappings) {
+    return tileMappings.map(mapping => {
+        const updatedMapping = {
+            name: mapping.name || 'Unnamed Mapping',
+            tiles: mapping.tiles || [],
+            elevationLow: mapping.elevationLow !== undefined ? mapping.elevationLow : 0,
+            elevationHigh: mapping.elevationHigh !== undefined ? mapping.elevationHigh : 10,
+            temperatureLow: mapping.temperatureLow !== undefined ? mapping.temperatureLow : 0,
+            temperatureHigh: mapping.temperatureHigh !== undefined ? mapping.temperatureHigh : 10,
+            moistureLow: mapping.moistureLow !== undefined ? mapping.moistureLow : 0,
+            moistureHigh: mapping.moistureHigh !== undefined ? mapping.moistureHigh : 10,
+            windIntensityLow: mapping.windIntensityLow !== undefined ? mapping.windIntensityLow : 0,
+            windIntensityHigh: mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh : 10
+        };
+        console.log(`Mapping "${updatedMapping.name}" wind intensity: Low ${updatedMapping.windIntensityLow}, High ${updatedMapping.windIntensityHigh}`);
+        return updatedMapping;
+    });
 }
 
 function updateTileOffset(event, tileMappings) {
@@ -2130,8 +2367,25 @@ function updateMapping(event) {
     const $input = $(event.currentTarget);
     const index = $input.closest('.mapping-item').data('index');
     const mapping = tileMappings[index];
-    const field = $input.attr('class').split('-')[0] + $input.attr('class').split('-')[1].charAt(0).toUpperCase() + $input.attr('class').split('-')[1].slice(1);
-    mapping[field] = parseFloat($input.val());
+    const field = $input.attr('class');
+
+    const newValue = parseFloat($input.val());
+
+    console.log(`Updating ${field} for "${mapping.name}" from ${mapping[field]} to ${newValue}`);
+
+    if (field === 'wind-intensity-low') {
+        mapping.windIntensityLow = newValue;
+    } else if (field === 'wind-intensity-high') {
+        mapping.windIntensityHigh = newValue;
+    } else if (field === 'biomeTags') {
+        mapping.biomeTags = $input.val().split(',').map(tag => tag.trim());
+    } else {
+        const propertyName = field.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+        mapping[propertyName] = newValue;
+    }
+
+    console.log(`Updated mapping:`, JSON.parse(JSON.stringify(mapping)));
+
     game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
 }
 
@@ -2158,8 +2412,8 @@ function addNewMapping(tileMappings) {
                 }],
                 elevationLow: 0.0,
                 elevationHigh: 10.0,
-                precipitationLow: 0.0,
-                precipitationHigh: 10.0,
+                moistureLow: 0.0,
+                moistureHigh: 10.0,
                 temperatureLow: 0.0,
                 temperatureHigh: 10.0,
                 windIntensityLow: 0.0,
@@ -2171,6 +2425,24 @@ function addNewMapping(tileMappings) {
         }
     }).render(true);
 }
+
+function getNeighbors(hex, hexGrid) {
+    const directions = [
+        { dx: 1, dy: 0 },    // East
+        { dx: 0.5, dy: -0.75 }, // Northeast
+        { dx: -0.5, dy: -0.75 }, // Northwest
+        { dx: -1, dy: 0 },   // West
+        { dx: -0.5, dy: 0.75 }, // Southwest
+        { dx: 0.5, dy: 0.75 }  // Southeast
+    ];
+
+    return directions.map(dir => {
+        const neighborX = hex.x + dir.dx * (hex.col % 2 === 0 ? 1 : -1);
+        const neighborY = hex.y + dir.dy;
+        return hexGrid.find(h => Math.abs(h.x - neighborX) < 0.1 && Math.abs(h.y - neighborY) < 0.1);
+    }).filter(Boolean);
+}
+
 
 
 
@@ -2272,16 +2544,34 @@ function saveConfiguration(html) {
         return;
     }
     const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
-    savedConfigs[configName] = JSON.parse(JSON.stringify(tileMappings));
+
+    console.log('Original tileMappings before saving:', JSON.parse(JSON.stringify(tileMappings)));
+
+    // Double-check wind intensity values
+    tileMappings.forEach(mapping => {
+        console.log(`${mapping.name} - Wind Intensity: Low ${mapping.windIntensityLow}, High ${mapping.windIntensityHigh}`);
+    });
+
+    // Apply the updateTileMappingStructure before saving
+    const updatedTileMappings = updateTileMappingStructure(tileMappings);
+    console.log('Configuration to be saved:', JSON.parse(JSON.stringify(updatedTileMappings)));
+
+    savedConfigs[configName] = JSON.parse(JSON.stringify(updatedTileMappings));
     game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
 
     // Save the current config name to the scene flags
     canvas.scene.setFlag("procedural-hex-maps", "currentTileMappingConfig", configName);
 
     // Also update the global tileMappings setting
-    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+    game.settings.set('procedural-hex-maps', 'tileMappings', updatedTileMappings);
+
+    // Update the local tileMappings variable
+    tileMappings = updatedTileMappings;
+
+    console.log('Final saved tileMappings:', JSON.parse(JSON.stringify(tileMappings)));
 
     displaySavedConfigurations(html);
+    displayTileMappings(html, tileMappings); // Refresh the display
     ui.notifications.info(`Configuration "${configName}" saved successfully.`);
 }
 
@@ -2310,6 +2600,7 @@ function loadConfiguration(event) {
     if (savedConfigs[configName]) {
         // Update the global tileMappings variable
         tileMappings = JSON.parse(JSON.stringify(savedConfigs[configName]));
+        console.log('Loaded configuration:', tileMappings);
 
         // Save the current config name to the scene flags
         canvas.scene.setFlag("procedural-hex-maps", "currentTileMappingConfig", configName);

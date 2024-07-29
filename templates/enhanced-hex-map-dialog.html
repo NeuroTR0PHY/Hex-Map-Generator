@@ -1,60 +1,68 @@
-﻿<div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px;">
-    {{#each environmentalFactors}}
-    <div style="border: 1px solid #ccc; padding: 10px;">
-        <h3>{{this}} Settings</h3>
-        <select id="{{this}}-noiseType" style="width: 100%;">
-            {{#each ../noiseTypes}}
-            <option value="{{this}}">{{this}}</option>
-            {{/each}}
-        </select>
-        <label>
-            Scale:
-            <input type="number" id="{{this}}-scale" value="0.01" step="0.01" style="width: 100%;">
-        </label>
-        <label>
-            Octaves:
-            <input type="number" id="{{this}}-octaves" value="4" min="1" max="8" style="width: 100%;">
-        </label>
-        <label>
-            Lacunarity:
-            <input type="number" id="{{this}}-lacunarity" value="2" step="0.1" style="width: 100%;">
-        </label>
-        <label>
-            Gain:
-            <input type="number" id="{{this}}-gain" value="0.5" step="0.1" min="0" max="1" style="width: 100%;">
-        </label>
-        <label>
-            Min:
-            <input type="number" id="{{this}}-min" value="0" style="width: 100%;">
-        </label>
-        <label>
-            Max:
-            <input type="number" id="{{this}}-max" value="10" style="width: 100%;">
-        </label>
-        <label>
-            Seed:
-            <input type="number" id="{{this}}-seed" placeholder="Random" style="width: 100%;">
-        </label>
-        <label>
-            <input type="checkbox" id="{{this}}-normalize" />
-            Normalize noise values (stretch to specified range (min to max))
-        </label>
-        <button id="preview-{{this}}">Preview {{this}} Noise</button>
-        <canvas id="{{this}}-preview" width="250" height="250" style="border:1px solid #000000;"></canvas>
-    </div>
-    {{/each}}
+﻿<div class="form-group">
+    <label for="main-seed">Main Seed:</label>
+    <input type="number" id="main-seed" name="main-seed">
 </div>
-<div style="margin-top: 20px;">
+<div class="form-group">
+    <label for="hex-size">Hex Size:</label>
+    <input type="number" id="hex-size" name="hex-size" value="70">
+</div>
+{{#each environmentalFactors}}
+<div class="form-group">
+    <label for="{{this}}-noiseType">{{titleCase this}} Noise Type:</label>
+    <select id="{{this}}-noiseType" name="{{this}}-noiseType">
+        {{#each ../noiseTypes}}
+        <option value="{{this}}">{{titleCase this}}</option>
+        {{/each}}
+    </select>
+</div>
+<div class="form-group">
+    <label for="{{this}}-scale">{{titleCase this}} Scale:</label>
+    <input type="number" id="{{this}}-scale" name="{{this}}-scale" step="0.001" value="0.01">
+</div>
+<div class="form-group">
+    <label for="{{this}}-octaves">{{titleCase this}} Octaves:</label>
+    <input type="number" id="{{this}}-octaves" name="{{this}}-octaves" value="4">
+</div>
+<div class="form-group">
+    <label for="{{this}}-lacunarity">{{titleCase this}} Lacunarity:</label>
+    <input type="number" id="{{this}}-lacunarity" name="{{this}}-lacunarity" step="0.1" value="2">
+</div>
+<div class="form-group">
+    <label for="{{this}}-gain">{{titleCase this}} Gain:</label>
+    <input type="number" id="{{this}}-gain" name="{{this}}-gain" step="0.1" value="0.5">
+</div>
+<div class="form-group">
+    <label for="{{this}}-min">{{titleCase this}} Min:</label>
+    <input type="number" id="{{this}}-min" name="{{this}}-min" value="0">
+</div>
+<div class="form-group">
+    <label for="{{this}}-max">{{titleCase this}} Max:</label>
+    <input type="number" id="{{this}}-max" name="{{this}}-max" value="10">
+</div>
+<div class="form-group">
+    <label for="{{this}}-seed">{{titleCase this}} Seed:</label>
+    <input type="number" id="{{this}}-seed" name="{{this}}-seed">
+</div>
+<div class="form-group">
     <label>
-        Hex Size:
-        <input type="number" name="hex-size" value="70" style="width: 100%;">
-    </label>
-    <label>
-        Random Factor:
-        <input type="number" id="randomFactor" value="0" step="0.1" style="width: 100%;">
-    </label>
-    <label>
-        Main Seed:
-        <input type="number" id="main-seed" placeholder="Random" style="width: 100%;">
+        <input type="checkbox" id="{{this}}-normalize" name="{{this}}-normalize">
+        Normalize {{titleCase this}}
     </label>
 </div>
+<div class="form-group">
+    <button id="preview-{{this}}">Preview {{titleCase this}}</button>
+</div>
+<canvas id="{{this}}-preview" width="250" height="250"></canvas>
+{{/each}}
+<div class="form-group">
+    <button id="preview-moisture">Preview Moisture</button>
+</div>
+<canvas id="moisture-preview" width="250" height="250"></canvas>
+<div class="form-group">
+    <button id="preview-wind-direction">Preview Wind Direction</button>
+</div>
+<canvas id="wind-direction-preview" width="250" height="250"></canvas>
+<div class="form-group">
+    <button id="preview-cloud-cover">Preview Cloud Cover</button>
+</div>
+<canvas id="cloud-cover-preview" width="250" height="250"></canvas>
