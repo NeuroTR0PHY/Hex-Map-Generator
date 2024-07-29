@@ -1,12 +1,14 @@
 ﻿let hexInfoBoxCreated = false;
 
+//let tileMappings = [];
 
 
 
 Hooks.once('ready', () => {
     const factors = ['elevation', 'precipitation', 'temperature', 'windIntensity'];
-    const sceneId = game.scenes.current.id;
+    const sceneId = canvas.scene.id;
 
+    // Register settings for environmental factors
     for (const factor of factors) {
         game.settings.register('procedural-hex-maps', `${sceneId}-${factor}`, {
             name: `Generated ${factor} data`,
@@ -16,13 +18,24 @@ Hooks.once('ready', () => {
             type: Object
         });
     }
+
     createHexInfoBox();
-    createHoverInfoBox(); //
+    createHoverInfoBox();
 
-    // If you want to ensure the settings are set for the current scene at startup, you can add this:
-    console.log("Scene-specific settings registered for scene:", sceneId);
-    tileMappings = game.settings.get('procedural-hex-maps', 'tileMappings');
+    // Load tile mappings
+    let tileMappings = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
 
+    // Load scene-specific tile mappings if available
+    const sceneSpecificMappings = canvas.scene.getFlag("procedural-hex-maps", "tileMappings");
+    if (sceneSpecificMappings) {
+        tileMappings = sceneSpecificMappings;
+    }
+
+    game['procedural-hex-maps'] = game['procedural-hex-maps'] || {};
+    game['procedural-hex-maps'].tileMappings = tileMappings;
+
+    // If you want to ensure the global setting is updated with the scene-specific mappings
+    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
 });
 
 Hooks.once('init', () => {
@@ -825,20 +838,31 @@ async function generateEnhancedHexMap(html) {
         const seed = parseInt(html.find('#main-seed').val()) || Math.floor(Math.random() * 1000000);
         console.log(`Generating enhanced hex map: ${width}x${height}, hex size: ${hexSize}, seed: ${seed}`);
 
-        // Use the tileMappings from the settings instead of loading from CSV
-        const tileMapping = game.settings.get('procedural-hex-maps', 'tileMappings');
+        // Load the latest tile mappings
+        const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", "currentTileMappingConfig");
+        const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+        let tileMapping;
+
+        if (currentConfigName && savedConfigs[currentConfigName]) {
+            tileMapping = JSON.parse(JSON.stringify(savedConfigs[currentConfigName]));
+        } else {
+            tileMapping = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
+        }
+
+        console.log("Tile mapping used for generation:", tileMapping);
+
         const hexGrid = createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
 
         const placedTiles = hexGrid.map(hex => ({
-            x: hex.x - (hexSize + 10) / 2,
-            y: hex.y - hexSize / 2,
+            x: hex.x - (hexSize + 10) / 2 + (hex.selectedTile?.xOffset || 0),
+            y: hex.y - hexSize / 2 + (hex.selectedTile?.yOffset || 0),
             width: hexSize + 10,
             height: hexSize,
             rotation: 0,
             sort: hex.staggeredRow,
             flags: { hexTile: true, hexId: hex.id },
             texture: {
-                src: hex.tilePath, // Use the tilePath from the new mapping
+                src: hex.tilePath,
                 scaleX: 2,
                 scaleY: 2,
                 offsetX: 0,
@@ -885,6 +909,68 @@ function adjustNoiseData(noiseData, originalSize, newWidth, newHeight) {
     return adjustedData;
 }
 
+function createHexGridData(width, height, hexSize, noiseData, tileMapping, seed) {
+    const hexGrid = [];
+    const hexWidth = hexSize + 10;
+    const hexHeight = hexSize;
+    const horizontalSpacing = hexWidth * 3 / 4;
+    const verticalSpacing = hexHeight;
+
+    const columns = Math.ceil(width / horizontalSpacing);
+    const rows = Math.ceil(height / hexHeight);
+
+    const random = new SeededRandom(seed);
+
+    let id = 0;
+
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < columns; col++) {
+            const x = col * horizontalSpacing;
+            const y = row * verticalSpacing + (col % 2) * (hexHeight / 2);
+
+            const centerX = x + (hexWidth + 10) / 2;
+            const centerY = y + hexHeight / 2;
+
+            if (centerX < width && centerY < height) {
+                let staggeredRow = (col % 2 === 0) ? row * 2 : row * 2 + 1;
+
+                id++;
+                const hexData = new HexData(id, centerX, centerY, col, row);
+                hexData.setStaggeredRow(staggeredRow);
+
+                // Use the adjusted noise data
+                const noiseX = Math.floor(centerX / (width / 250));
+                const noiseY = Math.floor(centerY / (height / 250));
+                const index = noiseY * 250 + noiseX;
+
+                hexData.baseElevation = noiseData.elevation[index] || 0;
+                hexData.basePrecipitation = noiseData.precipitation[index] || 0;
+                hexData.baseTemperature = noiseData.temperature[index] || 0;
+                hexData.baseWindIntensity = noiseData.windIntensity[index] || 0;
+
+                // Add tags if needed (example)
+                hexData.tags = ['forest', 'snow']; // Example tags, adjust as needed
+
+                hexData.updateEnvironment();
+                hexData.determineTile(tileMapping);
+
+                // Apply offsets if they exist
+                if (hexData.selectedTile) {
+                    if (hexData.selectedTile.xOffset) {
+                        hexData.x += hexData.selectedTile.xOffset;
+                    }
+                    if (hexData.selectedTile.yOffset) {
+                        hexData.y += hexData.selectedTile.yOffset;
+                    }
+                }
+
+                hexGrid.push(hexData);
+            }
+        }
+    }
+
+    return hexGrid;
+}
 
 
 //Hex map tile generator functions
@@ -913,6 +999,7 @@ class HexData {
         this.precipitation = 0;
         this.temperature = 0;
         this.windIntensity = 0;
+        this.isWater = false;
 
         // Terrain characteristics
         this.humidity = 0;
@@ -924,7 +1011,6 @@ class HexData {
         this.vegetationDensity = 0;
 
         // Water features
-        this.isWater = false;
         this.waterDepth = 0;
         this.isCoastal = false;
         this.riverSize = 0;
@@ -970,6 +1056,12 @@ class HexData {
 
         // Custom properties
         this.customProperties = {};
+
+        // Tags
+        this.tags = [];
+
+        // Selected tile (new property)
+        this.selectedTile = null;
     }
 
     setStaggeredRow(staggeredRow) {
@@ -1038,82 +1130,121 @@ class HexData {
             precipitation: this.precipitation,
             windIntensity: this.windIntensity
         });
+        console.log('Tile mapping:', tileMapping);
 
-        const matchingMappings = tileMapping.filter(mapping =>
-            this.elevation >= mapping.elevationLow && this.elevation <= mapping.elevationHigh &&
-            this.temperature >= mapping.temperatureLow && this.temperature <= mapping.temperatureHigh &&
-            this.precipitation >= mapping.precipitationLow && this.precipitation <= mapping.precipitationHigh &&
-            this.windIntensity >= mapping.windIntensityLow && this.windIntensity <= mapping.windIntensityHigh
-        );
+        const matchingMappings = tileMapping.filter(mapping => {
+            const elevationMatch = this.elevation >= mapping.elevationLow && this.elevation <= mapping.elevationHigh;
+            const temperatureMatch = this.temperature >= mapping.temperatureLow && this.temperature <= mapping.temperatureHigh;
+            const precipitationMatch = this.precipitation >= mapping.precipitationLow && this.precipitation <= mapping.precipitationHigh;
+            const windMatch = this.windIntensity >= mapping.windIntensityLow && this.windIntensity <= mapping.windIntensityHigh;
+
+            console.log(`Mapping ${mapping.name}: elevation ${elevationMatch}, temperature ${temperatureMatch}, precipitation ${precipitationMatch}, wind ${windMatch}`);
+
+            return elevationMatch && temperatureMatch && precipitationMatch && windMatch;
+        });
+
+        console.log('Matching mappings:', matchingMappings);
 
         if (matchingMappings.length > 0) {
-            // Collect all tiles from matching mappings
             const allMatchingTiles = matchingMappings.flatMap(mapping => mapping.tiles);
-
-            // Randomly select a tile from all matching tiles
-            const selectedTile = allMatchingTiles[Math.floor(Math.random() * allMatchingTiles.length)];
-            this.tilePath = selectedTile.tilePath;
-            this.tileName = selectedTile.tileName;
-            console.log(`Selected tile for hex ${this.id}:`, selectedTile.tileName);
+            this.selectedTile = allMatchingTiles[Math.floor(Math.random() * allMatchingTiles.length)];
+            this.tilePath = this.selectedTile.tilePath;
+            this.tileName = this.selectedTile.tileName;
+            console.log(`Selected tile for hex ${this.id}:`, this.tileName);
         } else {
             console.warn(`No matching tile found for hex ${this.id}. Using default tile.`);
             this.tilePath = 'modules/procedural-hex-maps/tiles/Hex_-_Base_(blank).png';
             this.tileName = 'Default Blank Tile';
+            this.selectedTile = null;
         }
     }
-}
+}   
+
 
 // Function to create hex grid data
-function createHexGridData(width, height, hexSize, noiseData, tileMapping, seed) {
-    const hexGrid = [];
-    const hexWidth = hexSize + 10;
-    const hexHeight = hexSize;
-    const horizontalSpacing = hexWidth * 3 / 4;
-    const verticalSpacing = hexHeight;
+async function generateEnhancedHexMap(html) {
+    const sceneId = canvas.scene.id;
+    const width = canvas.dimensions.width;
+    const height = canvas.dimensions.height;
+    const hexSize = parseInt(html.find('input[name="hex-size"]').val()) || canvas.grid.size;
 
-    const columns = Math.ceil(width / horizontalSpacing);
-    const rows = Math.ceil(height / hexHeight);
+    const factors = ['elevation', 'precipitation', 'temperature', 'windIntensity'];
+    const noiseData = {};
 
-    const random = new SeededRandom(seed);
-
-    let id = 0;
-
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < columns; col++) {
-            const x = col * horizontalSpacing;
-            const y = row * verticalSpacing + (col % 2) * (hexHeight / 2);
-
-            const centerX = x + (hexWidth + 10) / 2;
-            const centerY = y + hexHeight / 2;
-
-            if (centerX < width && centerY < height) {
-                let staggeredRow = (col % 2 === 0) ? row * 2 : row * 2 + 1;
-
-                id++;
-                const hexData = new HexData(id, centerX, centerY, col, row);
-                hexData.setStaggeredRow(staggeredRow);
-
-                // Use the adjusted noise data
-                const noiseX = Math.floor(centerX / (width / 250));
-                const noiseY = Math.floor(centerY / (height / 250));
-                const index = noiseY * 250 + noiseX;
-
-                hexData.baseElevation = noiseData.elevation[index] || 0;
-                hexData.basePrecipitation = noiseData.precipitation[index] || 0;
-                hexData.baseTemperature = noiseData.temperature[index] || 0;
-                hexData.baseWindIntensity = noiseData.windIntensity[index] || 0;
-
-                hexData.updateEnvironment();
-                hexData.determineTile(tileMapping);
-                hexData.recordSimulation('initial');
-
-                hexGrid.push(hexData);
+    try {
+        // Move noise data from temporary to generated storage
+        for (const factor of factors) {
+            const tempData = await game.settings.get('procedural-hex-maps', `temp-${factor}`);
+            if (tempData) {
+                await game.settings.set('procedural-hex-maps', `${sceneId}-${factor}`, tempData);
+                await game.settings.set('procedural-hex-maps', `temp-${factor}`, null); // Clear temporary storage
             }
         }
-    }
 
-    return hexGrid;
+        // Load noise data from generated files
+        for (const factor of factors) {
+            const loadedData = await loadNoiseData(sceneId, factor);
+            if (loadedData) {
+                noiseData[factor] = loadedData.noiseData;
+                console.log(`Loaded noise data for ${factor}:`, noiseData[factor]);
+            } else {
+                throw new Error(`Failed to load noise data for ${factor}`);
+            }
+        }
+
+        const seed = parseInt(html.find('#main-seed').val()) || Math.floor(Math.random() * 1000000);
+        console.log(`Generating enhanced hex map: ${width}x${height}, hex size: ${hexSize}, seed: ${seed}`);
+
+        // Load the latest tile mappings
+        const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", "currentTileMappingConfig");
+        const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+        let tileMapping;
+
+        if (currentConfigName && savedConfigs[currentConfigName]) {
+            tileMapping = JSON.parse(JSON.stringify(savedConfigs[currentConfigName]));
+        } else {
+            tileMapping = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
+        }
+
+        console.log("Tile mapping used for generation:", tileMapping);
+
+        const hexGrid = createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
+
+        const placedTiles = hexGrid.map(hex => ({
+            x: hex.x - (hexSize + 10) / 2 + (hex.selectedTile?.xOffset || 0),
+            y: hex.y - hexSize / 2 + (hex.selectedTile?.yOffset || 0),
+            width: hexSize + 10,
+            height: hexSize,
+            rotation: 0,
+            sort: hex.staggeredRow,
+            flags: { hexTile: true, hexId: hex.id },
+            texture: {
+                src: hex.tilePath,
+                scaleX: 2,
+                scaleY: 2,
+                offsetX: 0,
+                offsetY: 0
+            }
+        }));
+
+        const createdTiles = await canvas.scene.createEmbeddedDocuments("Tile", placedTiles);
+        placedTileIds = createdTiles.map(tile => tile.id);
+
+        // Update the hexGridData with the correct tile IDs
+        hexGrid.forEach((hex, index) => {
+            hex.tileId = placedTileIds[index];
+        });
+
+        await canvas.scene.setFlag("procedural-hex-maps", "hexGridData", hexGrid);
+
+        addHexHoverListeners();
+        console.log('All tiles placed and images assigned');
+    } catch (error) {
+        console.error('Error generating enhanced hex map:', error);
+        ui.notifications.error(`Error generating hex map: ${error.message}`);
+    }
 }
+
 
 
 // Function to update the display of a hex's data
@@ -1253,50 +1384,6 @@ async function loadNoiseData(sceneId, factor) {
 
 
 
-// Function to load tile mapping from CSV
-async function loadTileMapping() {
-    try {
-        const response = await fetch('modules/procedural-hex-maps/TileMapping.csv');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const text = await response.text();
-        console.log('TileMapping CSV loaded:', text);
-
-        // Split the text into lines and remove the header
-        const lines = text.split('\n').slice(1);
-
-        // Parse each line into an object
-        const tileMapping = lines.map(line => {
-            const [fullTileName, tileType, modifier, variant, elevationLow, elevationHigh, temperatureLow, temperatureHigh, precipitationLow, precipitationHigh, windLow, windHigh, settlement] = line.split(',').map(field => field.trim());
-
-            const tileData = {
-                fullTileName,
-                tileType: tileType.replace(/ /g, '_'),
-                modifier: modifier.replace(/ /g, '_'),
-                variant: variant.replace(/ /g, '_'),
-                elevationLow: parseInt(elevationLow),
-                elevationHigh: parseInt(elevationHigh),
-                temperatureLow: parseInt(temperatureLow),
-                temperatureHigh: parseInt(temperatureHigh),
-                precipitationLow: parseInt(precipitationLow),
-                precipitationHigh: parseInt(precipitationHigh),
-                windLow: parseInt(windLow),
-                windHigh: parseInt(windHigh),
-                settlement: parseInt(settlement)
-            };
-
-            console.log('Processed tile data:', tileData);
-            return tileData;
-        });
-
-        console.log('Processed tileMapping:', tileMapping);
-        return tileMapping;
-    } catch (error) {
-        console.error("Error loading tile mapping:", error);
-        throw error;
-    }
-}
 
 
 function clearHexMap() {
@@ -1763,27 +1850,17 @@ function normalizeValue(value, min, max, newMin, newMax) {
 let tileMappings = [];
 
 function showHexMapSettings() {
-    // Update tileMappings from game settings
-    tileMappings = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
+    const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", "currentTileMappingConfig");
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
 
-    // Validate and update data structure if necessary
-    tileMappings = tileMappings.map(mapping => {
-        if (!Array.isArray(mapping.tiles)) {
-            mapping.tiles = mapping.tilePath ? [{ tilePath: mapping.tilePath, tileName: mapping.tileName }] : [];
-        }
-        // Ensure all required properties exist
-        return {
-            tiles: mapping.tiles,
-            elevationLow: mapping.elevationLow || 0,
-            elevationHigh: mapping.elevationHigh || 10,
-            precipitationLow: mapping.precipitationLow || 0,
-            precipitationHigh: mapping.precipitationHigh || 10,
-            temperatureLow: mapping.temperatureLow || 0,
-            temperatureHigh: mapping.temperatureHigh || 10,
-            windIntensityLow: mapping.windIntensityLow || 0,
-            windIntensityHigh: mapping.windIntensityHigh || 10
-        };
-    });
+    if (currentConfigName && savedConfigs[currentConfigName]) {
+        tileMappings = JSON.parse(JSON.stringify(savedConfigs[currentConfigName]));
+    } else {
+        tileMappings = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
+    }
+
+    console.log("Tile mappings displayed in settings:", tileMappings);
+
 
     const windowHeight = window.innerHeight;
     const dialogHeight = Math.floor(windowHeight * 0.8);
@@ -1853,10 +1930,7 @@ function showHexMapSettings() {
                 html.find('#clear-all-mappings').click(() => clearAllMappings(tileMappings));
                 displaySavedConfigurations(html);
 
-                // Ensure the dialog takes up the full height
                 html.closest('.app').css('height', `${dialogHeight}px`);
-
-                // Reduce the height of the close button
                 html.closest('.app').find('.dialog-buttons').css('height', '30px');
             } catch (error) {
                 console.error("Error in dialog render:", error);
@@ -1874,34 +1948,7 @@ function displayTileMappings(html, tileMappings) {
     const list = html.find('#tile-mappings-list');
     list.empty();
 
-    console.log('Displaying tile mappings:', tileMappings);
-
     const fragment = document.createDocumentFragment();
-
-    // Add CSS for tooltip and improve dropdown visibility
-    const style = document.createElement('style');
-    style.textContent = `
-        .tile-tooltip {
-            position: fixed;
-            background-color: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 5px;
-            border-radius: 3px;
-            font-size: 12px;
-            z-index: 1000;
-            pointer-events: none;
-        }
-        .mapping-content {
-            display: none;
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-top: 1px solid #ccc;
-        }
-        .mapping-item.expanded .mapping-content {
-            display: block;
-        }
-    `;
-    document.head.appendChild(style);
 
     if (Array.isArray(tileMappings) && tileMappings.length > 0) {
         tileMappings.forEach((mapping, index) => {
@@ -1946,6 +1993,17 @@ function displayTileMappings(html, tileMappings) {
                             <input type="range" class="wind-intensity-high" min="0" max="10" step="0.1" value="${mapping.windIntensityHigh.toFixed(1)}">
                             <span class="wind-intensity-high-value">${mapping.windIntensityHigh.toFixed(1)}</span>
                         </div>
+                        <div class="tag-list">
+                            <label>Tags:</label>
+                            <input type="text" class="mapping-tags" value="${mapping.tags ? mapping.tags.join(', ') : ''}" placeholder="Enter tags separated by commas">
+                        </div>
+                        ${mapping.tiles.map((tile, tileIndex) => `
+                            <div class="tile-offset">
+                                <label>Tile ${tileIndex + 1} Offset:</label>
+                                <input type="number" class="x-offset" value="${tile.xOffset || 0}" data-tile-index="${tileIndex}"> X
+                                <input type="number" class="y-offset" value="${tile.yOffset || 0}" data-tile-index="${tileIndex}"> Y
+                            </div>
+                        `).join('')}
                     </div>
                 </div>
             `)[0];
@@ -1964,6 +2022,13 @@ function displayTileMappings(html, tileMappings) {
     list.find('input[type="range"]').on('change', event => updateMapping(event, tileMappings));
     list.find('.mapping-header').click(toggleMappingContent);
     list.find('.mapping-name').on('change', event => updateMappingName(event, tileMappings));
+    list.find('.mapping-tags').on('change', event => updateMappingTags(event, tileMappings));
+    list.find('.x-offset, .y-offset').on('change', event => updateTileOffset(event, tileMappings));
+
+    // Add tooltip functionality
+    list.find('.draggable-tile').on('mouseover', showTileTooltip);
+    list.find('.draggable-tile').on('mouseout', hideTileTooltip);
+    list.find('.draggable-tile').on('mousemove', updateTooltipPosition);
 
     // Add drag and drop functionality
     list.find('.draggable-tile').on('dragstart', handleDragStart);
@@ -1971,16 +2036,25 @@ function displayTileMappings(html, tileMappings) {
     list.find('.mapping-item').on('dragover', handleDragOver);
     list.find('.mapping-item').on('dragleave', handleDragLeave);
     list.find('.mapping-item').on('drop', event => handleDrop(event, tileMappings));
+}
 
-    // Add tooltip functionality
-    list.find('.draggable-tile').each((index, tile) => {
-        const $tile = $(tile);
-        $tile.on('mouseenter', showTileTooltip);
-        $tile.on('mouseleave', hideTileTooltip);
-        $tile.on('mousemove', updateTooltipPosition);
-    });
+function updateTileOffset(event, tileMappings) {
+    const $input = $(event.currentTarget);
+    const mappingIndex = $input.closest('.mapping-item').data('index');
+    const tileIndex = $input.data('tile-index');
+    const offsetType = $input.hasClass('x-offset') ? 'xOffset' : 'yOffset';
+    const offsetValue = parseInt($input.val()) || 0;
 
-    console.log('Tile mappings displayed');
+    tileMappings[mappingIndex].tiles[tileIndex][offsetType] = offsetValue;
+    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+}
+
+function updateMappingTags(event, tileMappings) {
+    const $input = $(event.currentTarget);
+    const index = $input.closest('.mapping-item').data('index');
+    tileMappings[index].tags = $input.val().split(',').map(tag => tag.trim());
+    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+
 }
 
 function toggleMappingContent(event) {
@@ -2024,8 +2098,9 @@ function hideTileTooltip() {
 
 function updateTooltipPosition(event) {
     if (activeTooltip) {
-        activeTooltip.style.left = `${event.clientX + 10}px`;
-        activeTooltip.style.top = `${event.clientY + 10}px`;
+        const offset = 10; // Distance from the cursor
+        activeTooltip.style.left = `${event.clientX + offset}px`;
+        activeTooltip.style.top = `${event.clientY + offset}px`;
     }
 }
 
@@ -2057,13 +2132,16 @@ function updateMapping(event) {
     const mapping = tileMappings[index];
     const field = $input.attr('class').split('-')[0] + $input.attr('class').split('-')[1].charAt(0).toUpperCase() + $input.attr('class').split('-')[1].slice(1);
     mapping[field] = parseFloat($input.val());
+    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
 }
 
-function updateMappingName(event, tileMappings) {
+function updateMappingName(event) {
     const $input = $(event.currentTarget);
     const index = $input.closest('.mapping-item').data('index');
     tileMappings[index].name = $input.val();
+    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
 }
+
 
 function addNewMapping(tileMappings) {
     new FilePicker({
@@ -2075,6 +2153,8 @@ function addNewMapping(tileMappings) {
                 tiles: [{
                     tilePath: path,
                     tileName: path.split('/').pop(),
+                    xOffset: 0,
+                    yOffset: 0
                 }],
                 elevationLow: 0.0,
                 elevationHigh: 10.0,
@@ -2086,11 +2166,11 @@ function addNewMapping(tileMappings) {
                 windIntensityHigh: 10.0
             };
             tileMappings.push(newMapping);
+            game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
             displayTileMappings($('.dialog-content'), tileMappings);
         }
     }).render(true);
 }
-
 
 
 
@@ -2124,7 +2204,7 @@ function addMappingsFromDirectory(tileMappings) {
                     };
                     tileMappings.push(newMapping);
                 });
-
+                game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
                 displayTileMappings($('.dialog-content'), tileMappings);
                 ui.notifications.info(`Added ${imageFiles.length} new tile mappings.`);
             } catch (error) {
@@ -2148,6 +2228,7 @@ function deleteMapping(event, tileMappings) {
                 label: "Yes",
                 callback: () => {
                     tileMappings.splice(index, 1);
+                    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
                     displayTileMappings($('.dialog-content'), tileMappings);
                 }
             },
@@ -2170,6 +2251,7 @@ function clearAllMappings(tileMappings) {
                 label: "Yes, Clear All",
                 callback: () => {
                     tileMappings.length = 0; // This clears the array
+                    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
                     displayTileMappings($('.dialog-content'), tileMappings);
                     ui.notifications.info("All tile mappings have been cleared.");
                 }
@@ -2183,18 +2265,25 @@ function clearAllMappings(tileMappings) {
     }).render(true);
 }
 
-    function saveConfiguration(html) {
-        const configName = html.find('#config-name').val();
-        if (!configName) {
-            ui.notifications.error("Please enter a name for the configuration.");
-            return;
-        }
-        const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
-        savedConfigs[configName] = JSON.parse(JSON.stringify(tileMappings));
-        game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
-        displaySavedConfigurations(html);
-        ui.notifications.info(`Configuration "${configName}" saved successfully.`);
+function saveConfiguration(html) {
+    const configName = html.find('#config-name').val();
+    if (!configName) {
+        ui.notifications.error("Please enter a name for the configuration.");
+        return;
     }
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+    savedConfigs[configName] = JSON.parse(JSON.stringify(tileMappings));
+    game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
+
+    // Save the current config name to the scene flags
+    canvas.scene.setFlag("procedural-hex-maps", "currentTileMappingConfig", configName);
+
+    // Also update the global tileMappings setting
+    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+
+    displaySavedConfigurations(html);
+    ui.notifications.info(`Configuration "${configName}" saved successfully.`);
+}
 
     function displaySavedConfigurations(html) {
         const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
@@ -2221,6 +2310,9 @@ function loadConfiguration(event) {
     if (savedConfigs[configName]) {
         // Update the global tileMappings variable
         tileMappings = JSON.parse(JSON.stringify(savedConfigs[configName]));
+
+        // Save the current config name to the scene flags
+        canvas.scene.setFlag("procedural-hex-maps", "currentTileMappingConfig", configName);
 
         // Refresh the display
         const dialogContent = $(event.currentTarget).closest('.hex-settings-dialog');
@@ -2302,6 +2394,7 @@ function handleDrop(event, tileMappings) {
             console.log('Updated tileMappings:', tileMappings);
 
             // Redisplay the mappings
+            game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
             displayTileMappings($('.dialog-content'), tileMappings);
         } catch (error) {
             console.error('Error during drag and drop operation:', error);

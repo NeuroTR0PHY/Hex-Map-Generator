@@ -23,3 +23,14 @@ li[data-control="hexmap"] i {
     background-color: #ff4136;
     color: white;
 }
+
+.tile-tooltip {
+    position: fixed;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 10000;
+}
