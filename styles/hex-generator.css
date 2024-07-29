@@ -18,3 +18,8 @@ li[data-control="hexmap"] i {
     z-index: 10000;
     display: none;
 }
+
+#clear-all-mappings {
+    background-color: #ff4136;
+    color: white;
+}
