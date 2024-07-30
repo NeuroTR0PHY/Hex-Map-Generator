@@ -249,31 +249,21 @@ function handleHexHover(event) {
     if (hexData) {
         console.log('Hex data found:', hexData);
 
-        // Log the hex data to the console
-        console.log(`Hex ${hexId} Data:`);
-        console.log(`Elevation: ${hexData.elevation}`);
-        console.log(`Temperature: ${hexData.temperature}`);
-        console.log(`Precipitation: ${hexData.precipitation}`);
-        console.log(`Wind Intensity: ${hexData.windIntensity}`);
-        console.log(`Biome: ${hexData.biomeType}`);
-        console.log(`Vegetation Density: ${hexData.vegetationDensity}`);
-        console.log(`Humidity: ${hexData.humidity}`);
-        console.log(`Moisture: ${hexData.moisture}`);
-
         const hexInfoContent = `
         <div style="display: flex; flex-wrap: wrap;">
-            <div style="width: 100%;"><strong>ID:</strong> ${hexData.id} x= ${hexData.x} y= ${hexData.y} <strong>Type:</strong> ${hexData.tileType} <strong>Modifier:</strong> ${hexData.tileModifier} <strong>Variant:</strong> ${hexData.tileVariant}</div>
+            <div style="width: 100%;"><strong>ID:</strong> ${hexData.id} x= ${hexData.x} y= ${hexData.y}</div>
+            <div style="width: 100%;"><strong>Type:</strong> ${hexData.tileType} <strong>Modifier:</strong> ${hexData.tileModifier} <strong>Variant:</strong> ${hexData.tileVariant}</div>
             <div style="width: 100%;"><strong>Tile:</strong> ${hexData.fullTileName}</div>
-            <div style="width: 50%;"><strong>Elevation:</strong> ${hexData.elevation}</div>
-            <div style="width: 50%;"><strong>Temperature:</strong> ${hexData.temperature}</div>
-            <div style="width: 50%;"><strong>Humidity:</strong> ${hexData.humidity}</div>
-            <div style="width: 50%;"><strong>Precipitation:</strong> ${hexData.precipitation}</div>
+            <div style="width: 50%;"><strong>Elevation:</strong> ${hexData.finalElevation.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Temperature:</strong> ${hexData.finalTemperature.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Humidity:</strong> ${hexData.humidity.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Precipitation:</strong> ${hexData.precipitation.toFixed(2)}</div>
             <div style="width: 50%;"><strong>Wind Direction:</strong> ${hexData.windDirection}</div>
-            <div style="width: 50%;"><strong>Wind Intensity:</strong> ${hexData.windIntensity}</div>
-            <div style="width: 50%;"><strong>Vegetation Density:</strong> ${hexData.vegetationDensity}</div>
+            <div style="width: 50%;"><strong>Wind Intensity:</strong> ${hexData.finalWindIntensity.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Vegetation Density:</strong> ${hexData.vegetationDensity.toFixed(2)}</div>
             <div style="width: 50%;"><strong>isWater:</strong> ${hexData.isWater}</div>
-            <div style="width: 50%;"><strong>Water Depth:</strong> ${hexData.waterDepth}</div>
-            <div style="width: 50%;"><strong>Moisture:</strong> ${hexData.moisture}</div>
+            <div style="width: 50%;"><strong>Water Depth:</strong> ${hexData.waterDepth.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Moisture:</strong> ${hexData.finalMoisture.toFixed(2)}</div>
         </div>
             `;
         updateHexInfoBox(hexInfoContent);
@@ -1183,6 +1173,11 @@ class HexData {
         this.row = row;
         this.staggeredRow = 0;
 
+        this.tileType = '';
+        this.tileModifier = '';
+        this.tileVariant = '';
+        this.fullTileName = '';
+
         // Base environmental characteristics
         this.baseElevation = 0;
         this.basePrecipitation = 0;
@@ -1259,45 +1254,65 @@ class HexData {
 
         // Selected tile (new property)
         this.selectedTile = null;
+
+        this.finalElevation = 0;
+        this.finalTemperature = 0;
+        this.finalMoisture = 0;
+        this.finalWindIntensity = 0;
     }
 
     setStaggeredRow(staggeredRow) {
         this.staggeredRow = staggeredRow;
     }
 
+    capValue(value) {
+        return Math.max(0, Math.min(10, value));
+    }
+
     updateEnvironment(elevationMod = 0, precipitationMod = 0, temperatureMod = 0, windMod = 0) {
+        // Calculate base values
         this.elevation = this.capValue(this.baseElevation + elevationMod);
         this.precipitation = this.capValue(this.basePrecipitation + precipitationMod);
         this.temperature = this.capValue(this.baseTemperature + temperatureMod);
         this.windIntensity = this.capValue(this.baseWindIntensity + windMod);
 
-        // Adjust temperature based on elevation (only if it doesn't push it out of bounds)
+        // Adjust temperature based on elevation
         const tempAdjustment = this.elevation * 0.5;
-        if (this.temperature - tempAdjustment >= 0) {
-            this.temperature -= tempAdjustment;
-        }
+        this.temperature = this.capValue(this.temperature - tempAdjustment);
 
         // Adjust precipitation based on elevation (orographic effect)
         this.precipitation = this.capValue(this.precipitation + this.elevation * 0.3);
 
+        // Determine if the hex is water
         this.isWater = this.elevation <= 2;
 
+        // Update derived characteristics
         this.updateDerivedCharacteristics();
+
+        // Calculate final moisture
+        this.calculateMoisture();
+
+        // Store final values
+        this.finalElevation = this.elevation;
+        this.finalTemperature = this.temperature;
+        this.finalWindIntensity = this.windIntensity;
+        this.finalMoisture = this.moisture;
+
+        console.log(`Hex ${this.id} final environmental values:`, {
+            elevation: this.finalElevation,
+            temperature: this.finalTemperature,
+            precipitation: this.precipitation,
+            moisture: this.finalMoisture,
+            windIntensity: this.finalWindIntensity,
+            isWater: this.isWater
+        });
     }
 
     updateDerivedCharacteristics() {
         this.humidity = this.capValue((this.precipitation * 2 + (10 - this.temperature)) / 3);
         this.cloudCover = this.capValue(this.precipitation * 0.8 + this.humidity * 0.2);
-        this.moisture = this.capValue((this.precipitation + this.humidity + (10 - this.elevation)) / 3);
-        console.log(`Hex ${this.id} moisture calculated: ${this.moisture}`);
-        this.vegetationDensity = this.capValue(Math.max(0, (this.moisture + this.temperature - this.elevation / 2) / 2));
-        if (this.isWater) this.vegetationDensity = 0;
         this.determineBiomeType();
         this.updateMovementCost();
-    }
-
-    capValue(value) {
-        return Math.max(0, Math.min(10, value));
     }
 
     determineBiomeType() {
@@ -1320,6 +1335,7 @@ class HexData {
         } else {
             this.biomeType = 'grassland';
         }
+        console.log(`Hex ${this.id} biome type determined: ${this.biomeType}`);
     }
 
     updateMovementCost() {
@@ -1330,28 +1346,49 @@ class HexData {
         else if (this.vegetationDensity > 7) this.movementCost = 1.5;
     }
 
+    calculateMoisture() {
+        // Adjust moisture calculation to reduce overall levels
+        this.moisture = this.capValue((this.precipitation * 0.6 + this.humidity * 0.4 + (10 - this.elevation) * 0.2) / 3);
+        console.log(`Hex ${this.id} moisture calculated: ${this.moisture}`);
+    }
+
+    setDefaultTile() {
+        this.tilePath = 'modules/procedural-hex-maps/tiles/Hex_-_Base_(blank).png';
+        this.tileName = 'Default Blank Tile';
+        this.tileType = 'Default';
+        this.tileModifier = 'Blank';
+        this.tileVariant = '';
+        this.fullTileName = this.tileName;
+    }
+
+
     determineTile(tileMapping) {
-        console.log('determineTile called for hex', this.id);
-        console.log('Hex data:', {
-            elevation: this.elevation,
-            temperature: this.temperature,
-            precipitation: this.precipitation,
-            windIntensity: this.windIntensity,
-            moisture: this.moisture
+        console.log(`determineTile called for hex ${this.id}`);
+        console.log('Final Hex data:', {
+            elevation: this.finalElevation,
+            temperature: this.finalTemperature,
+            moisture: this.finalMoisture,
+            windIntensity: this.finalWindIntensity
         });
-        console.log('Tile mapping:', tileMapping);
+
+        const EPSILON = 0.001;
 
         const matchingMappings = tileMapping.filter(mapping => {
-            const elevationMatch = this.elevation >= mapping.elevationLow && this.elevation <= mapping.elevationHigh;
-            const temperatureMatch = this.temperature >= mapping.temperatureLow && this.temperature <= mapping.temperatureHigh;
-            const moistureMatch = this.moisture >= (mapping.moistureLow ?? 0) && this.moisture <= (mapping.moistureHigh ?? 10);
-            const windMatch = this.windIntensity >= mapping.windIntensityLow && this.windIntensity <= mapping.windIntensityHigh;
+            const elevationMatch = this.finalElevation >= mapping.elevationLow - EPSILON && this.finalElevation <= mapping.elevationHigh + EPSILON;
+            const temperatureMatch = this.finalTemperature >= mapping.temperatureLow - EPSILON && this.finalTemperature <= mapping.temperatureHigh + EPSILON;
+            const moistureMatch = this.finalMoisture >= (mapping.moistureLow ?? 0) - EPSILON && this.finalMoisture <= (mapping.moistureHigh ?? 10) + EPSILON;
+            const windMatch = this.finalWindIntensity >= mapping.windIntensityLow - EPSILON && this.finalWindIntensity <= mapping.windIntensityHigh + EPSILON;
 
-            console.log(`Mapping ${mapping.name}:`);
-            console.log(`  Elevation: ${this.elevation} in [${mapping.elevationLow}, ${mapping.elevationHigh}] = ${elevationMatch}`);
-            console.log(`  Temperature: ${this.temperature} in [${mapping.temperatureLow}, ${mapping.temperatureHigh}] = ${temperatureMatch}`);
-            console.log(`  Moisture: ${this.moisture} in [${mapping.moistureLow ?? 0}, ${mapping.moistureHigh ?? 10}] = ${moistureMatch}`);
-            console.log(`  Wind: ${this.windIntensity} in [${mapping.windIntensityLow}, ${mapping.windIntensityHigh}] = ${windMatch}`);
+            console.log(`Mapping ${mapping.name}:`, {
+                elevationMatch,
+                temperatureMatch,
+                moistureMatch,
+                windMatch,
+                elevationRange: [mapping.elevationLow, mapping.elevationHigh],
+                temperatureRange: [mapping.temperatureLow, mapping.temperatureHigh],
+                moistureRange: [mapping.moistureLow, mapping.moistureHigh],
+                windRange: [mapping.windIntensityLow, mapping.windIntensityHigh]
+            });
 
             return elevationMatch && temperatureMatch && moistureMatch && windMatch;
         });
@@ -1359,16 +1396,20 @@ class HexData {
         console.log('Matching mappings:', matchingMappings);
 
         if (matchingMappings.length > 0) {
-            const allMatchingTiles = matchingMappings.flatMap(mapping => mapping.tiles);
-            this.selectedTile = allMatchingTiles[Math.floor(Math.random() * allMatchingTiles.length)];
-            this.tilePath = this.selectedTile.tilePath;
-            this.tileName = this.selectedTile.tileName;
+            const selectedMapping = matchingMappings[Math.floor(Math.random() * matchingMappings.length)];
+            const selectedTile = selectedMapping.tiles[Math.floor(Math.random() * selectedMapping.tiles.length)];
+
+            this.tilePath = selectedTile.tilePath;
+            this.tileName = selectedTile.tileName;
+            this.tileType = selectedMapping.name.split(' ')[0] || 'Default';
+            this.tileModifier = selectedMapping.name.split(' ')[1] || '';
+            this.tileVariant = '';
+            this.fullTileName = selectedTile.tileName;
+
             console.log(`Selected tile for hex ${this.id}:`, this.tileName);
         } else {
             console.warn(`No matching tile found for hex ${this.id}. Using default tile.`);
-            this.tilePath = 'modules/procedural-hex-maps/tiles/Hex_-_Base_(blank).png';
-            this.tileName = 'Default Blank Tile';
-            this.selectedTile = null;
+            this.setDefaultTile();
         }
     }
 }
