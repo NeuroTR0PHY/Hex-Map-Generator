@@ -2105,18 +2105,21 @@ function normalizeValue(value, min, max, newMin, newMax) {
 let tileMappings = [];
 
 function showHexMapSettings() {
-    const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", "currentTileMappingConfig");
+    let currentTilemapType = canvas.scene.getFlag("procedural-hex-maps", "currentTilemapType") || 'land';
+    const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", `current${currentTilemapType.capitalize()}TilemapConfig`) || "";
     const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
 
-    if (currentConfigName && savedConfigs[currentConfigName]) {
-        tileMappings = JSON.parse(JSON.stringify(savedConfigs[currentConfigName]));
+    if (savedConfigs[currentConfigName] && savedConfigs[currentConfigName].type === currentTilemapType) {
+        tileMappings = Array.isArray(savedConfigs[currentConfigName].mappings)
+            ? JSON.parse(JSON.stringify(savedConfigs[currentConfigName].mappings))
+            : [];
     } else {
-        tileMappings = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
+        tileMappings = [];
     }
 
     tileMappings = updateTileMappingStructure(tileMappings);
 
-    console.log("Tile mappings loaded in settings:", JSON.parse(JSON.stringify(tileMappings)));
+    console.log(`Tile mappings loaded for ${currentTilemapType}:`, JSON.parse(JSON.stringify(tileMappings)));
 
     const windowHeight = window.innerHeight;
     const dialogHeight = Math.floor(windowHeight * 0.8);
@@ -2128,28 +2131,32 @@ function showHexMapSettings() {
                 display: flex;
                 flex-direction: column;
             }
-            .mapping-item { margin-bottom: 10px; padding: 5px; border: 1px solid #ccc; }
-            .mapping-item img { vertical-align: middle; margin-right: 10px; }
-            .range-slider { display: flex; align-items: center; margin: 5px 0; }
-            .range-slider label { width: 100px; }
-            .range-slider input[type="range"] { flex-grow: 1; margin: 0 10px; }
-            .range-slider span { width: 30px; text-align: right; }
-            .mapping-header { cursor: pointer; display: flex; align-items: center; }
-            .mapping-header i { margin-right: 10px; }
-            .mapping-content { display: none; }
-            .expanded .mapping-content { display: block; }
-            #tile-mappings-list { flex-grow: 1; overflow-y: auto; }
-            .dialog-buttons { margin-top: auto; }
-            .mapping-name {
-                margin-right: 10px;
-                font-weight: bold;
+            .tilemap-type-buttons {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 10px;
             }
-            #clear-all-mappings {
-                background-color: #ff4136;
+            .tilemap-type-button {
+                flex: 1;
+                margin: 0 5px;
+                padding: 5px;
+                background-color: #ddd;
+                border: 1px solid #999;
+                cursor: pointer;
+            }
+            .tilemap-type-button.active {
+                background-color: #4CAF50;
                 color: white;
             }
+            #tile-mappings-list { flex-grow: 1; overflow-y: auto; }
+            .dialog-buttons { margin-top: auto; }
         </style>
         <div class="hex-settings-dialog">
+            <div class="tilemap-type-buttons">
+                <button class="tilemap-type-button ${currentTilemapType === 'land' ? 'active' : ''}" data-type="land">Land Tilemaps</button>
+                <button class="tilemap-type-button ${currentTilemapType === 'water' ? 'active' : ''}" data-type="water">Water Tilemaps</button>
+                <button class="tilemap-type-button ${currentTilemapType === 'object' ? 'active' : ''}" data-type="object">Object Tilemaps</button>
+            </div>
             <h2>Hex Map Tile Mappings</h2>
             <div id="tile-mappings-list"></div>
             <button id="add-mapping"><i class="fas fa-plus"></i> Add New Mapping</button>
@@ -2173,18 +2180,32 @@ function showHexMapSettings() {
                 icon: '<i class="fas fa-times"></i>',
                 label: "Close",
                 callback: () => {
-                    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+                    saveCurrentTileMappings(currentTilemapType);
                 }
             }
         },
         render: (html) => {
             try {
                 displayTileMappings(html, tileMappings);
-                html.find('#add-mapping').click(() => addNewMapping(tileMappings));
-                html.find('#add-directory').click(() => addMappingsFromDirectory(tileMappings));
-                html.find('#save-config').click(() => saveConfiguration(html));
-                html.find('#clear-all-mappings').click(() => clearAllMappings(tileMappings));
-                displaySavedConfigurations(html);
+                displaySavedConfigurations(html, currentTilemapType);
+
+                html.find('#add-mapping').click(() => addNewMapping(tileMappings, currentTilemapType));
+                html.find('#add-directory').click(() => addMappingsFromDirectory(tileMappings, currentTilemapType));
+                html.find('#save-config').click(() => saveConfiguration(html, currentTilemapType));
+                html.find('#clear-all-mappings').click(() => clearAllMappings(tileMappings, currentTilemapType));
+
+                html.find('.tilemap-type-button').click((event) => {
+                    const $button = $(event.currentTarget);
+                    const newTilemapType = $button.data('type');
+                    if (newTilemapType !== currentTilemapType) {
+                        saveCurrentTileMappings(currentTilemapType);
+                        currentTilemapType = newTilemapType;
+                        canvas.scene.setFlag("procedural-hex-maps", "currentTilemapType", currentTilemapType);
+                        html.find('.tilemap-type-button').removeClass('active');
+                        $button.addClass('active');
+                        loadTilemapType(html, currentTilemapType);
+                    }
+                });
 
                 html.closest('.app').css('height', `${dialogHeight}px`);
                 html.closest('.app').find('.dialog-buttons').css('height', '30px');
@@ -2200,13 +2221,48 @@ function showHexMapSettings() {
     }).render(true);
 }
 
+
+function saveCurrentTileMappings(tilemapType) {
+    const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`) || "";
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+
+    if (currentConfigName) {
+        savedConfigs[currentConfigName] = {
+            type: tilemapType,
+            mappings: tileMappings
+        };
+        game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
+    }
+}
+
+function loadTilemapType(html, tilemapType) {
+    const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`) || "";
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+
+    if (currentConfigName && savedConfigs[currentConfigName] && savedConfigs[currentConfigName].type === tilemapType) {
+        tileMappings = JSON.parse(JSON.stringify(savedConfigs[currentConfigName].mappings));
+    } else {
+        tileMappings = [];
+    }
+
+    tileMappings = updateTileMappingStructure(tileMappings);
+    displayTileMappings(html, tileMappings);
+    displaySavedConfigurations(html, tilemapType);
+}
+
+
 function displayTileMappings(html, tileMappings) {
     const list = html.find('#tile-mappings-list');
     list.empty();
 
+    if (!Array.isArray(tileMappings)) {
+        console.warn('tileMappings is not an array, initializing as empty array');
+        tileMappings = [];
+    }
+
     const fragment = document.createDocumentFragment();
 
-    if (Array.isArray(tileMappings) && tileMappings.length > 0) {
+    if (tileMappings.length > 0) {
         tileMappings.forEach((mapping, index) => {
             console.log(`Displaying mapping: ${mapping.name}`);
             console.log(`Wind Intensity: Low ${mapping.windIntensityLow}, High ${mapping.windIntensityHigh}`);
@@ -2216,41 +2272,41 @@ function displayTileMappings(html, tileMappings) {
                     <div class="mapping-header">
                         <i class="fas fa-chevron-right"></i>
                         <input type="text" class="mapping-name" value="${mapping.name || `Mapping ${index + 1}`}" />
+                        <i class="fas fa-trash delete-mapping" style="display: none;"></i>
                         <div class="tile-container">
                             ${Array.isArray(mapping.tiles) ? mapping.tiles.map(tile => `
                                 <img src="${tile.tilePath}" width="50" height="50" class="draggable-tile" draggable="true" data-path="${tile.tilePath}" data-name="${tile.tileName}">
                             `).join('') : ''}
                         </div>
                     </div>
-                    <div class="mapping-content">
-                        <button class="delete-mapping"><i class="fas fa-trash"></i> Delete</button>
+                    <div class="mapping-content" style="display: none;">
                         <div class="range-slider">
                             <label>Elevation:</label>
                             <input type="range" class="elevation-low" min="0" max="10" step="0.1" value="${mapping.elevationLow.toFixed(1)}">
-                            <span class="elevation-low-value">${mapping.elevationLow.toFixed(1)}</span>
+                            <input type="number" class="elevation-low-value" value="${mapping.elevationLow.toFixed(1)}" min="0" max="10" step="0.1">
                             <input type="range" class="elevation-high" min="0" max="10" step="0.1" value="${mapping.elevationHigh.toFixed(1)}">
-                            <span class="elevation-high-value">${mapping.elevationHigh.toFixed(1)}</span>
+                            <input type="number" class="elevation-high-value" value="${mapping.elevationHigh.toFixed(1)}" min="0" max="10" step="0.1">
                         </div>
                         <div class="range-slider">
                             <label>Moisture:</label>
                             <input type="range" class="moisture-low" min="0" max="10" step="0.1" value="${mapping.moistureLow.toFixed(1)}">
-                            <span class="moisture-low-value">${mapping.moistureLow.toFixed(1)}</span>
+                            <input type="number" class="moisture-low-value" value="${mapping.moistureLow.toFixed(1)}" min="0" max="10" step="0.1">
                             <input type="range" class="moisture-high" min="0" max="10" step="0.1" value="${mapping.moistureHigh.toFixed(1)}">
-                            <span class="moisture-high-value">${mapping.moistureHigh.toFixed(1)}</span>
+                            <input type="number" class="moisture-high-value" value="${mapping.moistureHigh.toFixed(1)}" min="0" max="10" step="0.1">
                         </div>
                         <div class="range-slider">
                             <label>Temperature:</label>
                             <input type="range" class="temperature-low" min="0" max="10" step="0.1" value="${mapping.temperatureLow.toFixed(1)}">
-                            <span class="temperature-low-value">${mapping.temperatureLow.toFixed(1)}</span>
+                            <input type="number" class="temperature-low-value" value="${mapping.temperatureLow.toFixed(1)}" min="0" max="10" step="0.1">
                             <input type="range" class="temperature-high" min="0" max="10" step="0.1" value="${mapping.temperatureHigh.toFixed(1)}">
-                            <span class="temperature-high-value">${mapping.temperatureHigh.toFixed(1)}</span>
+                            <input type="number" class="temperature-high-value" value="${mapping.temperatureHigh.toFixed(1)}" min="0" max="10" step="0.1">
                         </div>
                         <div class="range-slider">
                             <label>Wind Intensity:</label>
                             <input type="range" class="wind-intensity-low" min="0" max="10" step="0.1" value="${mapping.windIntensityLow !== undefined ? mapping.windIntensityLow.toFixed(1) : '0.0'}">
-                            <span class="wind-intensity-low-value">${mapping.windIntensityLow !== undefined ? mapping.windIntensityLow.toFixed(1) : '0.0'}</span>
+                            <input type="number" class="wind-intensity-low-value" value="${mapping.windIntensityLow !== undefined ? mapping.windIntensityLow.toFixed(1) : '0.0'}" min="0" max="10" step="0.1">
                             <input type="range" class="wind-intensity-high" min="0" max="10" step="0.1" value="${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}">
-                            <span class="wind-intensity-high-value">${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}</span>
+                            <input type="number" class="wind-intensity-high-value" value="${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}" min="0" max="10" step="0.1">
                         </div>
                         <div class="tag-list">
                             <label>Tags:</label>
@@ -2276,13 +2332,17 @@ function displayTileMappings(html, tileMappings) {
     list.append(fragment);
 
     // Add event listeners
-    list.find('.delete-mapping').click(event => deleteMapping(event, tileMappings));
-    list.find('input[type="range"]').on('input', updateRangeValue);
-    list.find('input[type="range"]').on('change', event => updateMapping(event, tileMappings));
-    list.find('.mapping-header').click(toggleMappingContent);
+    list.find('input[type="range"], input[type="number"]').on('input', updateRangeValue);
+    list.find('input[type="range"], input[type="number"]').on('change', event => updateMapping(event, tileMappings));
+    list.find('.mapping-header').click(function (event) {
+        if (!$(event.target).hasClass('delete-mapping')) {
+            toggleMappingContent(event);
+        }
+    });
     list.find('.mapping-name').on('change', event => updateMappingName(event, tileMappings));
     list.find('.mapping-tags').on('change', event => updateMappingTags(event, tileMappings));
     list.find('.x-offset, .y-offset').on('change', event => updateTileOffset(event, tileMappings));
+    list.find('.delete-mapping').click(event => deleteMapping(event, tileMappings));
 
     // Add tooltip functionality
     list.find('.draggable-tile').on('mouseover', showTileTooltip);
@@ -2298,10 +2358,14 @@ function displayTileMappings(html, tileMappings) {
 }
 
 function updateTileMappingStructure(tileMappings) {
+    if (!Array.isArray(tileMappings)) {
+        console.warn('tileMappings is not an array, initializing as empty array');
+        return [];
+    }
     return tileMappings.map(mapping => {
         const updatedMapping = {
             name: mapping.name || 'Unnamed Mapping',
-            tiles: mapping.tiles || [],
+            tiles: Array.isArray(mapping.tiles) ? mapping.tiles : [],
             elevationLow: mapping.elevationLow !== undefined ? mapping.elevationLow : 0,
             elevationHigh: mapping.elevationHigh !== undefined ? mapping.elevationHigh : 10,
             temperatureLow: mapping.temperatureLow !== undefined ? mapping.temperatureLow : 0,
@@ -2338,15 +2402,19 @@ function updateMappingTags(event, tileMappings) {
 function toggleMappingContent(event) {
     const $header = $(event.currentTarget);
     const $item = $header.closest('.mapping-item');
-    const $icon = $header.find('i');
+    const $content = $item.find('.mapping-content');
+    const $icon = $header.find('i:first-child');
+    const $deleteButton = $header.find('.delete-mapping');
 
-    $item.toggleClass('expanded');
-
-    if ($item.hasClass('expanded')) {
-        $icon.removeClass('fa-chevron-right').addClass('fa-chevron-down');
-    } else {
-        $icon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
-    }
+    $content.slideToggle(200, function () {
+        if ($content.is(':visible')) {
+            $icon.removeClass('fa-chevron-right').addClass('fa-chevron-down');
+            $deleteButton.show();
+        } else {
+            $icon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
+            $deleteButton.hide();
+        }
+    });
 }
 
 let activeTooltip = null;
@@ -2401,7 +2469,15 @@ function toggleMappingContent(event) {
 function updateRangeValue(event) {
     const $input = $(event.currentTarget);
     const value = parseFloat($input.val()).toFixed(1);
-    $input.next('span').text(value);
+    const isRange = $input.attr('type') === 'range';
+    const pair = isRange ? $input.next('input') : $input.prev('input');
+
+    if (isRange) {
+        pair.val(value);
+    } else {
+        pair.val(value);
+        $input.val(value);
+    }
 }
 
 function updateMapping(event) {
@@ -2487,7 +2563,7 @@ function getNeighbors(hex, hexGrid) {
 
 
 
-function addMappingsFromDirectory(tileMappings) {
+function addMappingsFromDirectory(tileMappings, tilemapType) {
     new FilePicker({
         type: "folder",
         callback: async (path) => {
@@ -2499,26 +2575,46 @@ function addMappingsFromDirectory(tileMappings) {
                     file.toLowerCase().endsWith('.jpeg')
                 );
 
+                // Ensure tileMappings is an array
+                if (!Array.isArray(tileMappings)) {
+                    tileMappings = [];
+                }
+
                 imageFiles.forEach(imagePath => {
                     const newMapping = {
                         name: `Mapping ${tileMappings.length + 1}`,
                         tiles: [{
                             tilePath: imagePath,
                             tileName: imagePath.split('/').pop(),
+                            xOffset: 0,
+                            yOffset: 0
                         }],
                         elevationLow: 0.0,
                         elevationHigh: 10.0,
-                        precipitationLow: 0.0,
-                        precipitationHigh: 10.0,
+                        moistureLow: 0.0,
+                        moistureHigh: 10.0,
                         temperatureLow: 0.0,
                         temperatureHigh: 10.0,
                         windIntensityLow: 0.0,
-                        windIntensityHigh: 10.0
+                        windIntensityHigh: 10.0,
+                        tags: []
                     };
                     tileMappings.push(newMapping);
                 });
-                game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+
+                // Update the current configuration
+                const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`);
+                const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+                if (currentConfigName) {
+                    savedConfigs[currentConfigName] = {
+                        type: tilemapType,
+                        mappings: tileMappings
+                    };
+                    game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
+                }
+
                 displayTileMappings($('.dialog-content'), tileMappings);
+                displaySavedConfigurations($('.dialog-content'), tilemapType);
                 ui.notifications.info(`Added ${imageFiles.length} new tile mappings.`);
             } catch (error) {
                 console.error("Error adding mappings from directory:", error);
@@ -2578,7 +2674,26 @@ function clearAllMappings(tileMappings) {
     }).render(true);
 }
 
-function saveConfiguration(html) {
+function loadTilemapType(html, tilemapType) {
+    const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`) || "";
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+
+    if (currentConfigName && savedConfigs[currentConfigName] && savedConfigs[currentConfigName].type === tilemapType) {
+        tileMappings = Array.isArray(savedConfigs[currentConfigName].mappings)
+            ? JSON.parse(JSON.stringify(savedConfigs[currentConfigName].mappings))
+            : [];
+    } else {
+        tileMappings = [];
+    }
+
+    tileMappings = updateTileMappingStructure(tileMappings);
+    displayTileMappings(html, tileMappings);
+    displaySavedConfigurations(html, tilemapType);
+}
+
+
+
+function saveConfiguration(html, tilemapType) {
     const configName = html.find('#config-name').val();
     if (!configName) {
         ui.notifications.error("Please enter a name for the configuration.");
@@ -2586,90 +2701,98 @@ function saveConfiguration(html) {
     }
     const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
 
-    console.log('Original tileMappings before saving:', JSON.parse(JSON.stringify(tileMappings)));
-
-    // Double-check wind intensity values
-    tileMappings.forEach(mapping => {
-        console.log(`${mapping.name} - Wind Intensity: Low ${mapping.windIntensityLow}, High ${mapping.windIntensityHigh}`);
-    });
-
-    // Apply the updateTileMappingStructure before saving
-    const updatedTileMappings = updateTileMappingStructure(tileMappings);
-    console.log('Configuration to be saved:', JSON.parse(JSON.stringify(updatedTileMappings)));
-
-    savedConfigs[configName] = JSON.parse(JSON.stringify(updatedTileMappings));
+    savedConfigs[configName] = {
+        type: tilemapType,
+        mappings: JSON.parse(JSON.stringify(tileMappings))
+    };
     game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
 
-    // Save the current config name to the scene flags
-    canvas.scene.setFlag("procedural-hex-maps", "currentTileMappingConfig", configName);
+    canvas.scene.setFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`, configName);
 
-    // Also update the global tileMappings setting
-    game.settings.set('procedural-hex-maps', 'tileMappings', updatedTileMappings);
-
-    // Update the local tileMappings variable
-    tileMappings = updatedTileMappings;
-
-    console.log('Final saved tileMappings:', JSON.parse(JSON.stringify(tileMappings)));
-
-    displaySavedConfigurations(html);
-    displayTileMappings(html, tileMappings); // Refresh the display
-    ui.notifications.info(`Configuration "${configName}" saved successfully.`);
+    displaySavedConfigurations(html, tilemapType);
+    displayTileMappings(html, tileMappings);
+    ui.notifications.info(`Configuration "${configName}" saved successfully for ${tilemapType} tilemaps.`);
 }
 
-    function displaySavedConfigurations(html) {
-        const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
-        const container = html.find('#saved-configs');
-        container.empty();
-        Object.keys(savedConfigs).forEach(configName => {
+
+function displaySavedConfigurations(html, tilemapType) {
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+    const container = html.find('#saved-configs');
+    container.empty();
+
+    const relevantConfigs = Object.keys(savedConfigs).filter(configName =>
+        savedConfigs[configName].type === tilemapType
+    );
+
+    if (relevantConfigs.length === 0) {
+        container.append('<p>No saved configurations for this tilemap type.</p>');
+    } else {
+        relevantConfigs.forEach(configName => {
             const configItem = $(`
-            <div>
-                <span>${configName}</span>
-                <button class="load-config" data-name="${configName}">Load</button>
-                <button class="delete-config" data-name="${configName}">Delete</button>
-            </div>
-        `);
+                <div>
+                    <span>${configName}</span>
+                    <button class="load-config" data-name="${configName}" data-type="${tilemapType}">Load</button>
+                    <button class="delete-config" data-name="${configName}">Delete</button>
+                </div>
+            `);
             container.append(configItem);
         });
-        html.find('.load-config').click(loadConfiguration);
-        html.find('.delete-config').click(deleteConfiguration);
     }
+
+    html.find('.load-config').click(loadConfiguration);
+    html.find('.delete-config').click(deleteConfiguration);
+}
+
 
 function loadConfiguration(event) {
     const configName = $(event.currentTarget).data('name');
+    const tilemapType = $(event.currentTarget).data('type');
     const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
 
-    if (savedConfigs[configName]) {
-        // Update the global tileMappings variable
-        tileMappings = JSON.parse(JSON.stringify(savedConfigs[configName]));
-        console.log('Loaded configuration:', tileMappings);
+    if (savedConfigs[configName] && savedConfigs[configName].type === tilemapType) {
+        tileMappings = Array.isArray(savedConfigs[configName].mappings)
+            ? JSON.parse(JSON.stringify(savedConfigs[configName].mappings))
+            : [];
 
-        // Save the current config name to the scene flags
-        canvas.scene.setFlag("procedural-hex-maps", "currentTileMappingConfig", configName);
+        console.log(`Loaded ${tilemapType} configuration:`, tileMappings);
 
-        // Refresh the display
+        canvas.scene.setFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`, configName);
+
         const dialogContent = $(event.currentTarget).closest('.hex-settings-dialog');
         displayTileMappings(dialogContent, tileMappings);
 
-        // Notify the user
-        ui.notifications.info(`Configuration "${configName}" loaded successfully.`);
+        ui.notifications.info(`Configuration "${configName}" loaded successfully for ${tilemapType} tilemaps.`);
+    } else {
+        ui.notifications.error(`Configuration "${configName}" not found or doesn't match the current tilemap type.`);
+    }
+}
+
+function deleteConfiguration(event) {
+    const configName = $(event.currentTarget).data('name');
+    const tilemapType = $(event.currentTarget).closest('.hex-settings-dialog').find('.tilemap-type-button.active').data('type');
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+
+    if (savedConfigs[configName]) {
+        delete savedConfigs[configName];
+        game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
+
+        // If the deleted config was the current one, clear the current config flag
+        const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`);
+        if (currentConfigName === configName) {
+            canvas.scene.unsetFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`);
+            tileMappings = []; // Clear the current tileMappings
+        }
+
+        // Refresh the displays
+        const dialogContent = $(event.currentTarget).closest('.hex-settings-dialog');
+        displaySavedConfigurations(dialogContent, tilemapType);
+        displayTileMappings(dialogContent, tileMappings);
+
+        ui.notifications.info(`Configuration "${configName}" deleted successfully.`);
     } else {
         ui.notifications.error(`Configuration "${configName}" not found.`);
     }
 }
-
-    function deleteConfiguration(event) {
-        const configName = $(event.currentTarget).data('name');
-        const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
-
-        if (savedConfigs[configName]) {
-            delete savedConfigs[configName];
-            game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
-            displaySavedConfigurations($(event.currentTarget).closest('.hex-settings-dialog'));
-            ui.notifications.info(`Configuration "${configName}" deleted successfully.`);
-        } else {
-            ui.notifications.error(`Configuration "${configName}" not found.`);
-        }
-    }
 
 function handleDragStart(event) {
     event.originalEvent.dataTransfer.setData('text/plain', event.target.dataset.path);
@@ -2725,7 +2848,7 @@ function handleDrop(event, tileMappings) {
 
             console.log('Updated tileMappings:', tileMappings);
 
-            // Redisplay the mappings
+            // Redisplay the mappings without expanding them
             game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
             displayTileMappings($('.dialog-content'), tileMappings);
         } catch (error) {
