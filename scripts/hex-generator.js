@@ -1292,6 +1292,9 @@ class HexData {
         // Calculate final moisture
         this.calculateMoisture();
 
+        // Calculate vegetation density
+        this.calculateVegetationDensity();
+
         // Store final values
         this.finalElevation = this.elevation;
         this.finalTemperature = this.temperature;
@@ -1304,7 +1307,8 @@ class HexData {
             precipitation: this.precipitation,
             moisture: this.finalMoisture,
             windIntensity: this.finalWindIntensity,
-            isWater: this.isWater
+            isWater: this.isWater,
+            vegDensity: this.vegetationDensity
         });
     }
 
@@ -1346,6 +1350,20 @@ class HexData {
         else if (this.vegetationDensity > 7) this.movementCost = 1.5;
     }
 
+    calculateVegetationDensity() {
+        // Base calculation
+        let density = (this.moisture * 0.4) + ((10 - this.elevation) * 0.2) + ((10 - this.windIntensity) * 0.2) + (this.temperature * 0.2);
+
+        // Adjustments
+        if (this.elevation > 8) density *= 0.5; // Reduce density at high elevations
+        if (this.temperature < 2) density *= 0.3; // Reduce density in very cold areas
+        if (this.temperature > 8) density *= 0.7; // Slightly reduce density in very hot areas
+        if (this.moisture < 2) density *= 0.2; // Drastically reduce density in very dry areas
+
+        // Cap the density between 0 and 10
+        this.vegetationDensity = Math.max(0, Math.min(10, density));
+    }
+
     calculateMoisture() {
         // Adjust moisture calculation to reduce overall levels
         this.moisture = this.capValue((this.precipitation * 0.6 + this.humidity * 0.4 + (10 - this.elevation) * 0.2) / 3);
@@ -1378,19 +1396,22 @@ class HexData {
             const temperatureMatch = this.finalTemperature >= mapping.temperatureLow - EPSILON && this.finalTemperature <= mapping.temperatureHigh + EPSILON;
             const moistureMatch = this.finalMoisture >= (mapping.moistureLow ?? 0) - EPSILON && this.finalMoisture <= (mapping.moistureHigh ?? 10) + EPSILON;
             const windMatch = this.finalWindIntensity >= mapping.windIntensityLow - EPSILON && this.finalWindIntensity <= mapping.windIntensityHigh + EPSILON;
+            const vegetationMatch = this.vegetationDensity >= (mapping.vegetationDensityLow ?? 0) - EPSILON && this.vegetationDensity <= (mapping.vegetationDensityHigh ?? 10) + EPSILON;
 
             console.log(`Mapping ${mapping.name}:`, {
                 elevationMatch,
                 temperatureMatch,
                 moistureMatch,
                 windMatch,
+                vegetationMatch,
                 elevationRange: [mapping.elevationLow, mapping.elevationHigh],
                 temperatureRange: [mapping.temperatureLow, mapping.temperatureHigh],
                 moistureRange: [mapping.moistureLow, mapping.moistureHigh],
-                windRange: [mapping.windIntensityLow, mapping.windIntensityHigh]
+                windRange: [mapping.windIntensityLow, mapping.windIntensityHigh],
+                vegetationRange: [mapping.vegetationDensityLow, mapping.vegetationDensityHigh]
             });
 
-            return elevationMatch && temperatureMatch && moistureMatch && windMatch;
+            return elevationMatch && temperatureMatch && moistureMatch && windMatch && vegetationMatch;
         });
 
         console.log('Matching mappings:', matchingMappings);
@@ -2272,7 +2293,6 @@ function displayTileMappings(html, tileMappings) {
                     <div class="mapping-header">
                         <i class="fas fa-chevron-right"></i>
                         <input type="text" class="mapping-name" value="${mapping.name || `Mapping ${index + 1}`}" />
-                        <i class="fas fa-trash delete-mapping" style="display: none;"></i>
                         <div class="tile-container">
                             ${Array.isArray(mapping.tiles) ? mapping.tiles.map(tile => `
                                 <img src="${tile.tilePath}" width="50" height="50" class="draggable-tile" draggable="true" data-path="${tile.tilePath}" data-name="${tile.tileName}">
@@ -2319,6 +2339,7 @@ function displayTileMappings(html, tileMappings) {
                                 <input type="number" class="y-offset" value="${tile.yOffset || 0}" data-tile-index="${tileIndex}"> Y
                             </div>
                         `).join('')}
+                        <button class="delete-mapping-button">Delete Mapping</button>
                     </div>
                 </div>
             `)[0];
@@ -2334,15 +2355,11 @@ function displayTileMappings(html, tileMappings) {
     // Add event listeners
     list.find('input[type="range"], input[type="number"]').on('input', updateRangeValue);
     list.find('input[type="range"], input[type="number"]').on('change', event => updateMapping(event, tileMappings));
-    list.find('.mapping-header').click(function (event) {
-        if (!$(event.target).hasClass('delete-mapping')) {
-            toggleMappingContent(event);
-        }
-    });
+    list.find('.mapping-header').click(toggleMappingContent);
     list.find('.mapping-name').on('change', event => updateMappingName(event, tileMappings));
     list.find('.mapping-tags').on('change', event => updateMappingTags(event, tileMappings));
     list.find('.x-offset, .y-offset').on('change', event => updateTileOffset(event, tileMappings));
-    list.find('.delete-mapping').click(event => deleteMapping(event, tileMappings));
+    list.find('.delete-mapping-button').click(event => deleteMapping(event, tileMappings));
 
     // Add tooltip functionality
     list.find('.draggable-tile').on('mouseover', showTileTooltip);
@@ -2404,15 +2421,14 @@ function toggleMappingContent(event) {
     const $item = $header.closest('.mapping-item');
     const $content = $item.find('.mapping-content');
     const $icon = $header.find('i:first-child');
-    const $deleteButton = $header.find('.delete-mapping');
 
     $content.slideToggle(200, function () {
         if ($content.is(':visible')) {
             $icon.removeClass('fa-chevron-right').addClass('fa-chevron-down');
-            $deleteButton.show();
+            $item.addClass('expanded');
         } else {
             $icon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
-            $deleteButton.hide();
+            $item.removeClass('expanded');
         }
     });
 }
@@ -2625,20 +2641,25 @@ function addMappingsFromDirectory(tileMappings, tilemapType) {
 }
 
 function deleteMapping(event, tileMappings) {
-    const index = $(event.currentTarget).closest('.mapping-item').data('index');
-    const mapping = tileMappings[index];
+    const $mappingItem = $(event.currentTarget).closest('.mapping-item');
+    const index = $mappingItem.data('index');
 
     new Dialog({
         title: "Confirm Deletion",
-        content: `Are you sure you want to delete the mapping "${mapping.name}" with ${mapping.tiles.length} tile(s)?`,
+        content: `<p>Are you sure you want to delete this mapping?</p>`,
         buttons: {
             yes: {
                 icon: '<i class="fas fa-check"></i>',
                 label: "Yes",
                 callback: () => {
                     tileMappings.splice(index, 1);
-                    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
-                    displayTileMappings($('.dialog-content'), tileMappings);
+                    $mappingItem.remove();
+                    // Update other mappings' indices
+                    $('.mapping-item').each((i, el) => {
+                        $(el).data('index', i);
+                    });
+                    // Save the updated tileMappings
+                    saveCurrentTileMappings(getCurrentTilemapType());
                 }
             },
             no: {
@@ -2648,6 +2669,10 @@ function deleteMapping(event, tileMappings) {
         },
         default: "no"
     }).render(true);
+}
+
+function getCurrentTilemapType() {
+    return canvas.scene.getFlag("procedural-hex-maps", "currentTilemapType") || 'land';
 }
 
 function clearAllMappings(tileMappings) {
