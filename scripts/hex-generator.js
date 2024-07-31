@@ -580,6 +580,10 @@ class NoiseModule {
     }
 }
 
+Handlebars.registerHelper('capitalize', function (str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+});
+
 async function showEnhancedHexMapDialog() {
     const content = await renderTemplate("modules/procedural-hex-maps/templates/enhanced-hex-map-dialog.html", {
         environmentalFactors: ['elevation', 'precipitation', 'temperature', 'windIntensity'],
@@ -613,7 +617,6 @@ async function showEnhancedHexMapDialog() {
                     curveEditorContainer = document.createElement('div');
                     curveEditorContainer.id = `${factor}-curve-editor-container`;
                     curveEditorContainer.className = 'curve-editor';
-                    previewCanvas.insertAdjacentElement('afterend', curveEditorContainer);
                 }
 
                 // Create reset and preset buttons
@@ -634,9 +637,14 @@ async function showEnhancedHexMapDialog() {
                 sCurveButton.dataset.factor = factor;
                 sCurveButton.dataset.preset = 's';
 
-                curveEditorContainer.insertAdjacentElement('afterend', sCurveButton);
-                curveEditorContainer.insertAdjacentElement('afterend', bellCurveButton);
-                curveEditorContainer.insertAdjacentElement('afterend', resetButton);
+                // Insert the curve editor container and buttons after the preview button but before the preview canvas
+                if (previewButton && previewCanvas) {
+                    curveEditorContainer.insertAdjacentElement('afterend', previewCanvas);
+                    previewButton.insertAdjacentElement('afterend', sCurveButton);
+                    sCurveButton.insertAdjacentElement('afterend', bellCurveButton);
+                    bellCurveButton.insertAdjacentElement('afterend', resetButton);
+                    resetButton.insertAdjacentElement('afterend', curveEditorContainer);
+                }
 
                 console.log(`${factor} elements:`, {
                     previewButton: previewButton ? 1 : 0,
@@ -658,12 +666,24 @@ async function showEnhancedHexMapDialog() {
             html.find('#preview-moisture').on('click', () => previewMoisture(html));
             html.find('#preview-wind-direction').on('click', () => previewWindDirection(html));
             html.find('#preview-cloud-cover').on('click', () => previewCloudCover(html));
+
+            // Add horizontal lines between sections
+            for (let i = 0; i < html[0].children.length; i++) {
+                if (i % 2 !== 0) {
+                    const separator = document.createElement('div');
+                    separator.style.gridColumn = '1 / -1';
+                    separator.style.borderBottom = '1px solid #ccc';
+                    separator.style.margin = '10px 0';
+                    html[0].children[i].insertAdjacentElement('afterend', separator);
+                }
+            }
         },
         default: "generate",
         width: 800,
         height: 800
     }).render(true);
 }
+
 
 
 function initializeCurveEditor(container, factor) {
@@ -796,7 +816,6 @@ function renderPreview(canvas, hexGrid, valueFunction, isDirectional = false) {
 
     ctx.putImageData(imageData, 0, 0);
 }
-
 function hslToRgb(h, s, l) {
     let r, g, b;
 
