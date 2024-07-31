@@ -19,6 +19,16 @@ Hooks.once('ready', () => {
         });
     }
 
+    for (const factor of factors) {
+        game.settings.register('procedural-hex-maps', `temp-${factor}`, {
+            name: `Temporary ${factor} data`,
+            scope: 'client',
+            config: false,
+            default: null,
+            type: Object
+        });
+    }
+
     createHexInfoBox();
     createHoverInfoBox();
 
@@ -39,16 +49,7 @@ Hooks.once('ready', () => {
 });
 
 Hooks.once('init', () => {
-    const factors = ['elevation', 'precipitation', 'temperature', 'windIntensity'];
-    for (const factor of factors) {
-        game.settings.register('procedural-hex-maps', `temp-${factor}`, {
-            name: `Temporary ${factor} data`,
-            scope: 'client',
-            config: false,
-            default: null,
-            type: Object
-        });
-    }
+
 
     game.settings.register('procedural-hex-maps', 'tileMappings', {
         name: "Tile Mappings",
@@ -57,6 +58,17 @@ Hooks.once('init', () => {
         type: Object,
         default: []
     });
+
+    const factors = ['elevation', 'precipitation', 'temperature', 'windIntensity'];
+    for (const factor of factors) {
+        game.settings.register('procedural-hex-maps', `${factor}-curve`, {
+            name: `${factor.charAt(0).toUpperCase() + factor.slice(1)} Curve`,
+            scope: 'world',
+            config: false,
+            type: Array,
+            default: new Array(256).fill(0).map((_, i) => i)
+        });
+    }
 
     game.settings.register('procedural-hex-maps', 'savedConfigurations', {
         name: "Saved Configurations",
@@ -271,6 +283,8 @@ function handleHexHover(event) {
         console.warn('No hex data found for hexId:', hexId);
     }
 }
+
+
 
 // Add event listeners to the hex tiles
 function addHexHoverListeners() {
@@ -587,24 +601,113 @@ async function showEnhancedHexMapDialog() {
             }
         },
         render: (html) => {
+            console.log("Full dialog HTML:", html.html());
+
             for (const factor of ['elevation', 'precipitation', 'temperature', 'windIntensity']) {
-                html.find(`#preview-${factor}`).on('click', () => previewNoise(html, factor));
+                const previewButton = html[0].querySelector(`#preview-${factor}`);
+                const previewCanvas = html[0].querySelector(`#${factor}-preview`);
+
+                // Create curve editor container if it doesn't exist
+                let curveEditorContainer = html[0].querySelector(`#${factor}-curve-editor-container`);
+                if (!curveEditorContainer) {
+                    curveEditorContainer = document.createElement('div');
+                    curveEditorContainer.id = `${factor}-curve-editor-container`;
+                    curveEditorContainer.className = 'curve-editor';
+                    previewCanvas.insertAdjacentElement('afterend', curveEditorContainer);
+                }
+
+                // Create reset and preset buttons
+                const resetButton = document.createElement('button');
+                resetButton.textContent = 'Reset Curve';
+                resetButton.className = 'reset-curve';
+                resetButton.dataset.factor = factor;
+
+                const bellCurveButton = document.createElement('button');
+                bellCurveButton.textContent = 'Bell Curve';
+                bellCurveButton.className = 'preset-curve';
+                bellCurveButton.dataset.factor = factor;
+                bellCurveButton.dataset.preset = 'bell';
+
+                const sCurveButton = document.createElement('button');
+                sCurveButton.textContent = 'S-Curve';
+                sCurveButton.className = 'preset-curve';
+                sCurveButton.dataset.factor = factor;
+                sCurveButton.dataset.preset = 's';
+
+                curveEditorContainer.insertAdjacentElement('afterend', sCurveButton);
+                curveEditorContainer.insertAdjacentElement('afterend', bellCurveButton);
+                curveEditorContainer.insertAdjacentElement('afterend', resetButton);
+
+                console.log(`${factor} elements:`, {
+                    previewButton: previewButton ? 1 : 0,
+                    previewCanvas: previewCanvas ? 1 : 0,
+                    curveEditorContainer: curveEditorContainer ? 1 : 0,
+                    curveEditorHTML: curveEditorContainer ? curveEditorContainer.outerHTML : 'Not found'
+                });
+
+                if (previewButton && previewCanvas && curveEditorContainer) {
+                    previewButton.addEventListener('click', () => previewNoise(html, factor));
+                    initializeCurveEditor(curveEditorContainer, factor);
+                    resetButton.addEventListener('click', () => resetCurve(factor));
+                    bellCurveButton.addEventListener('click', () => applyPresetCurve(factor, 'bell'));
+                    sCurveButton.addEventListener('click', () => applyPresetCurve(factor, 's'));
+                } else {
+                    console.warn(`Preview button, canvas, or curve editor container for ${factor} not found`);
+                }
             }
             html.find('#preview-moisture').on('click', () => previewMoisture(html));
             html.find('#preview-wind-direction').on('click', () => previewWindDirection(html));
             html.find('#preview-cloud-cover').on('click', () => previewCloudCover(html));
-
-            const dialogElement = html.closest('.app');
-            dialogElement.css({
-                'width': '70%',
-                'left': '15%',
-                'max-width': 'none'
-            });
         },
         default: "generate",
         width: 800,
         height: 800
     }).render(true);
+}
+
+
+function initializeCurveEditor(container, factor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    container.appendChild(canvas);
+
+    const ctx = canvas.getContext('2d');
+    let curve = getCurve(factor);
+
+    drawCurve(ctx, curve);
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseleave', stopDrawing);
+
+    let isDrawing = false;
+
+    function startDrawing(e) {
+        isDrawing = true;
+        draw(e);
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / rect.width * 256);
+        const y = Math.floor((1 - (e.clientY - rect.top) / rect.height) * 256);
+        curve[x] = y;
+        drawCurve(ctx, curve);
+    }
+
+    function stopDrawing() {
+        isDrawing = false;
+        saveCurve(factor, curve);
+
+        // Trigger a preview update
+        const previewButton = document.querySelector(`#preview-${factor}`);
+        if (previewButton) {
+            previewButton.click();
+        }
+    }
 }
 
 async function previewMoisture(html) {
@@ -726,7 +829,7 @@ async function previewNoise(html, factor) {
         const params = getNoiseParams(html, factor);
         const previewCanvas = html.find(`#${factor}-preview`)[0];
         if (!previewCanvas) {
-            throw new Error('Preview canvas not found');
+            throw new Error(`Preview canvas for ${factor} not found`);
         }
         const ctx = previewCanvas.getContext('2d');
         const previewWidth = 250;
@@ -740,7 +843,14 @@ async function previewNoise(html, factor) {
         const noiseModule = new NoiseModule();
         noiseModule.setSeed(params.seed);
 
-        const noiseData = generateUnifiedNoise(previewWidth, previewHeight, params, noiseModule);
+        let noiseData = generateUnifiedNoise(previewWidth, previewHeight, params, noiseModule);
+
+        // Apply the most recent curve
+        const curve = getCurve(factor);
+        for (let i = 0; i < noiseData.length; i++) {
+            const index = Math.floor(noiseData[i] * 25.5); // Map 0-10 to 0-255
+            noiseData[i] = curve[index] / 25.5; // Map back to 0-10
+        }
 
         // Render preview
         const imageData = ctx.createImageData(previewWidth, previewHeight);
@@ -748,8 +858,7 @@ async function previewNoise(html, factor) {
         for (let y = 0; y < previewHeight; y++) {
             for (let x = 0; x < previewWidth; x++) {
                 const noiseValue = noiseData[y * previewWidth + x];
-
-                const color = Math.floor(255 * (1 - (noiseValue / 10)));
+                const color = Math.floor(255 * (1 - noiseValue / 10));
                 const index = (y * previewWidth + x) * 4;
                 imageData.data[index] = color;
                 imageData.data[index + 1] = color;
@@ -763,19 +872,22 @@ async function previewNoise(html, factor) {
         // Use noiseData for hover functionality
         attachHoverEventListeners(previewCanvas, noiseData, previewWidth, params);
 
-        // Save the noise data to temporary storage
-        await game.settings.set('procedural-hex-maps', `temp-${factor}`, { noiseData, noiseParams: params });
+        await game.settings.set('procedural-hex-maps', `temp-${factor}`, { noiseData, noiseParams: params, curve });
 
-        console.log(`${factor} noise data stored:`, noiseData);
+        console.log(`${factor} noise data and curve stored:`, { noiseData, curve });
     } catch (error) {
         console.error(`Error in previewNoise for ${factor}:`, error);
-        if (previewCanvas) {
-            const ctx = previewCanvas.getContext('2d');
-            ctx.fillStyle = 'red';
-            ctx.font = '12px Arial';
-            ctx.fillText(`Error generating preview for ${factor}`, 10, 20);
-            ctx.fillText(error.message, 10, 40);
-        }
+        ui.notifications.error(`Error generating preview for ${factor}: ${error.message}`);
+    }
+}
+
+function displayErrorMessage(html, factor, errorMessage) {
+    const errorContainer = html.find(`#${factor}-error`);
+    if (errorContainer.length) {
+        errorContainer.text(`Error: ${errorMessage}`).show();
+    } else {
+        console.error(`Error container for ${factor} not found`);
+        ui.notifications.error(`Error generating preview for ${factor}: ${errorMessage}`);
     }
 }
 
@@ -838,19 +950,23 @@ function generateUnifiedNoise(width, height, params, noiseModule) {
         }
     }
 
-    // Normalize if needed
-    const range = maxNoiseValue - minNoiseValue;
-    const scaleFactor = params.normalize ? (params.max - params.min) / range : 10;
-    const offset = params.normalize ? params.min - minNoiseValue * scaleFactor : 0;
+    console.log(`Raw noise values - Min: ${minNoiseValue}, Max: ${maxNoiseValue}`);
 
+    // Scale and normalize if needed
     for (let i = 0; i < noiseValues.length; i++) {
-        let scaledValue = noiseValues[i] * scaleFactor + offset;
-        noiseValues[i] = Math.max(0, Math.min(10, scaledValue));
+        if (params.normalize) {
+            noiseValues[i] = ((noiseValues[i] - minNoiseValue) / (maxNoiseValue - minNoiseValue)) * (params.max - params.min) + params.min;
+        } else {
+            noiseValues[i] *= 10; // Scale to 0-10 range
+        }
+        // Cap values between 0 and 10
+        noiseValues[i] = Math.max(0, Math.min(10, noiseValues[i]));
     }
+
+    console.log(`Processed noise values - Min: ${Math.min(...noiseValues)}, Max: ${Math.max(...noiseValues)}`);
 
     return noiseValues;
 }
-
 
 function normalizeValue(value, min, max, newMin, newMax) {
     if (max === min) {
@@ -908,7 +1024,8 @@ function getNoiseParams(html, factor) {
         min: parseFloat(html.find(`#${factor}-min`).val()),
         max: parseFloat(html.find(`#${factor}-max`).val()),
         seed: html.find(`#${factor}-seed`).val() ? parseInt(html.find(`#${factor}-seed`).val()) : Math.floor(Math.random() * 1000000),
-        normalize: html.find(`#${factor}-normalize`).is(':checked')
+        normalize: html.find(`#${factor}-normalize`).is(':checked'),
+        curve: getCurve(factor)
     };
 }
 
@@ -945,22 +1062,12 @@ async function generateEnhancedHexMap(html) {
         const seed = parseInt(html.find('#main-seed').val()) || Math.floor(Math.random() * 1000000);
         console.log(`Generating enhanced hex map: ${width}x${height}, hex size: ${hexSize}, seed: ${seed}`);
 
-        // Load the latest tile mappings
-        const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", "currentTileMappingConfig");
-        const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
-        let tileMapping;
-        if (currentConfigName && savedConfigs[currentConfigName]) {
-            tileMapping = JSON.parse(JSON.stringify(savedConfigs[currentConfigName]));
-        } else {
-            tileMapping = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
-        }
+        // Load the latest land tile configuration
+        const tileMapping = getCurrentLandTileConfiguration();
 
-        tileMapping = updateTileMappingStructure(tileMapping);
-
-        console.log("Updated tile mapping used for generation:", tileMapping);
+        console.log("Tile mapping used for generation:", tileMapping);
 
         const hexGrid = createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
-
 
         const placedTiles = hexGrid.map(hex => ({
             x: hex.x - (hexSize + 10) / 2 + (hex.selectedTile?.xOffset || 0),
@@ -1370,15 +1477,6 @@ class HexData {
         console.log(`Hex ${this.id} moisture calculated: ${this.moisture}`);
     }
 
-    setDefaultTile() {
-        this.tilePath = 'modules/procedural-hex-maps/tiles/Hex_-_Base_(blank).png';
-        this.tileName = 'Default Blank Tile';
-        this.tileType = 'Default';
-        this.tileModifier = 'Blank';
-        this.tileVariant = '';
-        this.fullTileName = this.tileName;
-    }
-
 
     determineTile(tileMapping) {
         console.log(`determineTile called for hex ${this.id}`);
@@ -1386,7 +1484,9 @@ class HexData {
             elevation: this.finalElevation,
             temperature: this.finalTemperature,
             moisture: this.finalMoisture,
-            windIntensity: this.finalWindIntensity
+            windIntensity: this.finalWindIntensity,
+            vegetationDensity: this.vegetationDensity,
+            waterDepth: this.waterDepth
         });
 
         const EPSILON = 0.001;
@@ -1397,6 +1497,7 @@ class HexData {
             const moistureMatch = this.finalMoisture >= (mapping.moistureLow ?? 0) - EPSILON && this.finalMoisture <= (mapping.moistureHigh ?? 10) + EPSILON;
             const windMatch = this.finalWindIntensity >= mapping.windIntensityLow - EPSILON && this.finalWindIntensity <= mapping.windIntensityHigh + EPSILON;
             const vegetationMatch = this.vegetationDensity >= (mapping.vegetationDensityLow ?? 0) - EPSILON && this.vegetationDensity <= (mapping.vegetationDensityHigh ?? 10) + EPSILON;
+            const waterDepthMatch = this.waterDepth >= (mapping.waterDepthLow ?? 0) - EPSILON && this.waterDepth <= (mapping.waterDepthHigh ?? 10) + EPSILON;
 
             console.log(`Mapping ${mapping.name}:`, {
                 elevationMatch,
@@ -1404,14 +1505,16 @@ class HexData {
                 moistureMatch,
                 windMatch,
                 vegetationMatch,
+                waterDepthMatch,
                 elevationRange: [mapping.elevationLow, mapping.elevationHigh],
                 temperatureRange: [mapping.temperatureLow, mapping.temperatureHigh],
                 moistureRange: [mapping.moistureLow, mapping.moistureHigh],
                 windRange: [mapping.windIntensityLow, mapping.windIntensityHigh],
-                vegetationRange: [mapping.vegetationDensityLow, mapping.vegetationDensityHigh]
+                vegetationRange: [mapping.vegetationDensityLow, mapping.vegetationDensityHigh],
+                waterDepthRange: [mapping.waterDepthLow, mapping.waterDepthHigh]
             });
 
-            return elevationMatch && temperatureMatch && moistureMatch && windMatch && vegetationMatch;
+            return elevationMatch && temperatureMatch && moistureMatch && windMatch && vegetationMatch && waterDepthMatch;
         });
 
         console.log('Matching mappings:', matchingMappings);
@@ -1426,6 +1529,7 @@ class HexData {
             this.tileModifier = selectedMapping.name.split(' ')[1] || '';
             this.tileVariant = '';
             this.fullTileName = selectedTile.tileName;
+            this.selectedTile = selectedTile;
 
             console.log(`Selected tile for hex ${this.id}:`, this.tileName);
         } else {
@@ -1433,7 +1537,39 @@ class HexData {
             this.setDefaultTile();
         }
     }
+
+    setDefaultTile() {
+        this.tilePath = 'modules/procedural-hex-maps/tiles/Hex_-_Base_(blank).png';
+        this.tileName = 'Default Blank Tile';
+        this.tileType = 'Default';
+        this.tileModifier = 'Blank';
+        this.tileVariant = '';
+        this.fullTileName = this.tileName;
+        this.selectedTile = null;
+    }
+
 }
+
+function getCurrentLandTileConfiguration() {
+    const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", "currentLandTilemapConfig");
+    const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
+
+    console.log("Current land config name:", currentConfigName);
+    console.log("Saved configs:", savedConfigs);
+
+    if (currentConfigName && savedConfigs[currentConfigName] && savedConfigs[currentConfigName].type === 'land') {
+        console.log("Using saved land configuration:", savedConfigs[currentConfigName].mappings);
+        return savedConfigs[currentConfigName].mappings;
+    }
+
+    // If no current configuration is set or it's invalid, return the default tileMappings
+    const defaultMappings = game.settings.get('procedural-hex-maps', 'tileMappings') || [];
+    console.log("Using default tile mappings:", defaultMappings);
+    return defaultMappings;
+}
+
+
+
 
 
 // Function to create hex grid data
@@ -1594,22 +1730,40 @@ function getTileImage(hex, tileMapping) {
 function generateEnvironmentalFactor(noiseModule, x, y, params) {
     const scaledX = x * params.scale;
     const scaledY = y * params.scale;
+    let noiseValue;
 
-    switch (params.noiseType) {
-        case 'simplex':
-            return (noiseModule.simplex(scaledX, scaledY) + 1) / 2;
-        case 'worley':
-            return noiseModule.worley(scaledX, scaledY);
-        case 'fractalPerlin':
-            return (noiseModule.fractalPerlin(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain) + 1) / 2;
-        case 'fractalSimplex':
-            return (noiseModule.fractalSimplex(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain) + 1) / 2;
-        case 'fractalWorley':
-            return noiseModule.fractalWorley(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain);
-        case 'perlin':
-        default:
-            return (noiseModule.perlin(scaledX, scaledY) + 1) / 2;
+    try {
+        switch (params.noiseType) {
+            case 'simplex':
+                noiseValue = (noiseModule.simplex(scaledX, scaledY) + 1) / 2;
+                break;
+            case 'worley':
+                noiseValue = noiseModule.worley(scaledX, scaledY);
+                break;
+            case 'fractalPerlin':
+                noiseValue = (noiseModule.fractalPerlin(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain) + 1) / 2;
+                break;
+            case 'fractalSimplex':
+                noiseValue = (noiseModule.fractalSimplex(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain) + 1) / 2;
+                break;
+            case 'fractalWorley':
+                noiseValue = noiseModule.fractalWorley(scaledX, scaledY, 0, params.octaves, params.lacunarity, params.gain);
+                break;
+            case 'perlin':
+            default:
+                noiseValue = (noiseModule.perlin(scaledX, scaledY) + 1) / 2;
+        }
+    } catch (error) {
+        console.error(`Error generating noise at (${x}, ${y}):`, error);
+        noiseValue = 0; // Fallback value
     }
+
+    if (isNaN(noiseValue)) {
+        console.error(`NaN value generated at (${x}, ${y}) with type ${params.noiseType}`);
+        return 0; // Fallback value
+    }
+
+    return noiseValue;
 }
 
 
@@ -2328,6 +2482,20 @@ function displayTileMappings(html, tileMappings) {
                             <input type="range" class="wind-intensity-high" min="0" max="10" step="0.1" value="${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}">
                             <input type="number" class="wind-intensity-high-value" value="${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}" min="0" max="10" step="0.1">
                         </div>
+                        <div class="range-slider">
+                            <label>Vegetation Density:</label>
+                            <input type="range" class="vegetation-density-low" min="0" max="10" step="0.1" value="${mapping.vegetationDensityLow !== undefined ? mapping.vegetationDensityLow.toFixed(1) : '0.0'}">
+                            <input type="number" class="vegetation-density-low-value" value="${mapping.vegetationDensityLow !== undefined ? mapping.vegetationDensityLow.toFixed(1) : '0.0'}" min="0" max="10" step="0.1">
+                            <input type="range" class="vegetation-density-high" min="0" max="10" step="0.1" value="${mapping.vegetationDensityHigh !== undefined ? mapping.vegetationDensityHigh.toFixed(1) : '10.0'}">
+                            <input type="number" class="vegetation-density-high-value" value="${mapping.vegetationDensityHigh !== undefined ? mapping.vegetationDensityHigh.toFixed(1) : '10.0'}" min="0" max="10" step="0.1">
+                        </div>
+                        <div class="range-slider">
+                            <label>Water Depth:</label>
+                            <input type="range" class="water-depth-low" min="0" max="10" step="0.1" value="${mapping.waterDepthLow !== undefined ? mapping.waterDepthLow.toFixed(1) : '0.0'}">
+                            <input type="number" class="water-depth-low-value" value="${mapping.waterDepthLow !== undefined ? mapping.waterDepthLow.toFixed(1) : '0.0'}" min="0" max="10" step="0.1">
+                            <input type="range" class="water-depth-high" min="0" max="10" step="0.1" value="${mapping.waterDepthHigh !== undefined ? mapping.waterDepthHigh.toFixed(1) : '10.0'}">
+                            <input type="number" class="water-depth-high-value" value="${mapping.waterDepthHigh !== undefined ? mapping.waterDepthHigh.toFixed(1) : '10.0'}" min="0" max="10" step="0.1">
+                        </div>
                         <div class="tag-list">
                             <label>Tags:</label>
                             <input type="text" class="mapping-tags" value="${mapping.tags ? mapping.tags.join(', ') : ''}" placeholder="Enter tags separated by commas">
@@ -2374,6 +2542,8 @@ function displayTileMappings(html, tileMappings) {
     list.find('.mapping-item').on('drop', event => handleDrop(event, tileMappings));
 }
 
+
+
 function updateTileMappingStructure(tileMappings) {
     if (!Array.isArray(tileMappings)) {
         console.warn('tileMappings is not an array, initializing as empty array');
@@ -2390,9 +2560,14 @@ function updateTileMappingStructure(tileMappings) {
             moistureLow: mapping.moistureLow !== undefined ? mapping.moistureLow : 0,
             moistureHigh: mapping.moistureHigh !== undefined ? mapping.moistureHigh : 10,
             windIntensityLow: mapping.windIntensityLow !== undefined ? mapping.windIntensityLow : 0,
-            windIntensityHigh: mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh : 10
+            windIntensityHigh: mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh : 10,
+            vegetationDensityLow: mapping.vegetationDensityLow !== undefined ? mapping.vegetationDensityLow : 0,
+            vegetationDensityHigh: mapping.vegetationDensityHigh !== undefined ? mapping.vegetationDensityHigh : 10,
+            waterDepthLow: mapping.waterDepthLow !== undefined ? mapping.waterDepthLow : 0,
+            waterDepthHigh: mapping.waterDepthHigh !== undefined ? mapping.waterDepthHigh : 10,
+            tags: Array.isArray(mapping.tags) ? mapping.tags : []
         };
-        console.log(`Mapping "${updatedMapping.name}" wind intensity: Low ${updatedMapping.windIntensityLow}, High ${updatedMapping.windIntensityHigh}`);
+        console.log(`Mapping "${updatedMapping.name}" updated`);
         return updatedMapping;
     });
 }
@@ -2506,7 +2681,13 @@ function updateMapping(event) {
 
     console.log(`Updating ${field} for "${mapping.name}" from ${mapping[field]} to ${newValue}`);
 
-    if (field === 'wind-intensity-low') {
+    if (field.includes('vegetation-density')) {
+        const property = field.includes('-low') ? 'vegetationDensityLow' : 'vegetationDensityHigh';
+        mapping[property] = newValue;
+    } else if (field.includes('water-depth')) {
+        const property = field.includes('-low') ? 'waterDepthLow' : 'waterDepthHigh';
+        mapping[property] = newValue;
+    } else if (field === 'wind-intensity-low') {
         mapping.windIntensityLow = newValue;
     } else if (field === 'wind-intensity-high') {
         mapping.windIntensityHigh = newValue;
@@ -2530,7 +2711,7 @@ function updateMappingName(event) {
 }
 
 
-function addNewMapping(tileMappings) {
+function addNewMapping(tileMappings, tilemapType) {
     new FilePicker({
         type: "image",
         current: "modules/procedural-hex-maps/tiles",
@@ -2550,10 +2731,15 @@ function addNewMapping(tileMappings) {
                 temperatureLow: 0.0,
                 temperatureHigh: 10.0,
                 windIntensityLow: 0.0,
-                windIntensityHigh: 10.0
+                windIntensityHigh: 10.0,
+                vegetationDensityLow: 0.0,
+                vegetationDensityHigh: 10.0,
+                waterDepthLow: 0.0,
+                waterDepthHigh: 10.0,
+                tags: []
             };
             tileMappings.push(newMapping);
-            game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+            saveCurrentTileMappings(tilemapType);
             displayTileMappings($('.dialog-content'), tileMappings);
         }
     }).render(true);
@@ -2613,22 +2799,16 @@ function addMappingsFromDirectory(tileMappings, tilemapType) {
                         temperatureHigh: 10.0,
                         windIntensityLow: 0.0,
                         windIntensityHigh: 10.0,
+                        vegetationDensityLow: 0.0,
+                        vegetationDensityHigh: 10.0,
+                        waterDepthLow: 0.0,
+                        waterDepthHigh: 10.0,
                         tags: []
                     };
                     tileMappings.push(newMapping);
                 });
 
-                // Update the current configuration
-                const currentConfigName = canvas.scene.getFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`);
-                const savedConfigs = game.settings.get('procedural-hex-maps', 'savedConfigurations') || {};
-                if (currentConfigName) {
-                    savedConfigs[currentConfigName] = {
-                        type: tilemapType,
-                        mappings: tileMappings
-                    };
-                    game.settings.set('procedural-hex-maps', 'savedConfigurations', savedConfigs);
-                }
-
+                saveCurrentTileMappings(tilemapType);
                 displayTileMappings($('.dialog-content'), tileMappings);
                 displaySavedConfigurations($('.dialog-content'), tilemapType);
                 ui.notifications.info(`Added ${imageFiles.length} new tile mappings.`);
@@ -2639,6 +2819,7 @@ function addMappingsFromDirectory(tileMappings, tilemapType) {
         }
     }).render(true);
 }
+
 
 function deleteMapping(event, tileMappings) {
     const $mappingItem = $(event.currentTarget).closest('.mapping-item');
@@ -2734,6 +2915,14 @@ function saveConfiguration(html, tilemapType) {
 
     canvas.scene.setFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`, configName);
 
+    if (tilemapType === 'land') {
+        // Update the global tileMappings setting with the new land configuration
+        game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+    }
+
+    console.log(`Saved ${tilemapType} configuration:`, configName);
+    console.log("Updated saved configs:", savedConfigs);
+
     displaySavedConfigurations(html, tilemapType);
     displayTileMappings(html, tileMappings);
     ui.notifications.info(`Configuration "${configName}" saved successfully for ${tilemapType} tilemaps.`);
@@ -2782,6 +2971,11 @@ function loadConfiguration(event) {
         console.log(`Loaded ${tilemapType} configuration:`, tileMappings);
 
         canvas.scene.setFlag("procedural-hex-maps", `current${tilemapType.capitalize()}TilemapConfig`, configName);
+
+        if (tilemapType === 'land') {
+            // Update the global tileMappings setting with the loaded land configuration
+            game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+        }
 
         const dialogContent = $(event.currentTarget).closest('.hex-settings-dialog');
         displayTileMappings(dialogContent, tileMappings);
@@ -2883,4 +3077,114 @@ function handleDrop(event, tileMappings) {
     } else {
         console.log('Invalid drag and drop operation');
     }
+}
+
+function initializeCurveEditor(container, factor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    container.appendChild(canvas);
+
+    const ctx = canvas.getContext('2d');
+    let curve = new Array(256).fill(0).map((_, i) => i);
+
+    drawCurve(ctx, curve);
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseleave', stopDrawing);
+
+    let isDrawing = false;
+
+    function startDrawing(e) {
+        isDrawing = true;
+        draw(e);
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / rect.width * 256);
+        const y = Math.floor((1 - (e.clientY - rect.top) / rect.height) * 256);
+        curve[x] = y;
+        drawCurve(ctx, curve);
+    }
+
+    function stopDrawing() {
+        isDrawing = false;
+        saveCurve(factor, curve);
+    }
+
+    // Store the curve in the container for later access
+    container.curve = curve;
+}
+
+function drawCurve(ctx, curve) {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.beginPath();
+    ctx.moveTo(0, ctx.canvas.height - curve[0]);
+    for (let i = 1; i < 256; i++) {
+        ctx.lineTo(i, ctx.canvas.height - curve[i]);
+    }
+    ctx.strokeStyle = 'black';
+    ctx.stroke();
+}
+
+
+function resetCurve(factor) {
+    const container = document.querySelector(`#${factor}-curve-editor-container`);
+    const canvas = container.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    const curve = new Array(256).fill(0).map((_, i) => i);
+    drawCurve(ctx, curve);
+    saveCurve(factor, curve);
+
+    // Trigger a preview update
+    const previewButton = document.querySelector(`#preview-${factor}`);
+    if (previewButton) {
+        previewButton.click();
+    }
+}
+
+function applyPresetCurve(factor, preset) {
+    const container = document.getElementById(`${factor}-curve-editor-container`);
+    const canvas = container.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    let curve;
+
+    if (preset === 'bell') {
+        curve = new Array(256).fill(0).map((_, i) => {
+            const x = (i - 128) / 64;
+            return Math.floor(255 * Math.exp(-x * x / 2));
+        });
+    } else if (preset === 's') {
+        curve = new Array(256).fill(0).map((_, i) => {
+            return Math.floor(255 / (1 + Math.exp(-0.05 * (i - 128))));
+        });
+    }
+
+    drawCurve(ctx, curve);
+    container.curve = curve;
+    saveCurve(factor, curve);
+}
+
+function saveCurve(factor, curve) {
+    game.settings.set('procedural-hex-maps', `${factor}-curve`, curve);
+
+    // Update the temporary storage if it exists
+    const tempData = game.settings.get('procedural-hex-maps', `temp-${factor}`);
+    if (tempData) {
+        tempData.curve = curve;
+        game.settings.set('procedural-hex-maps', `temp-${factor}`, tempData);
+    }
+}
+
+
+function getCurve(factor) {
+    const tempData = game.settings.get('procedural-hex-maps', `temp-${factor}`);
+    if (tempData && tempData.curve) {
+        return tempData.curve;
+    }
+    return game.settings.get('procedural-hex-maps', `${factor}-curve`) || new Array(256).fill(0).map((_, i) => i);
 }
