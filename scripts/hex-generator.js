@@ -246,15 +246,11 @@ function handleHexHover(event) {
         return;
     }
 
-    console.log('Hovering over hex:', hexId);
-
     const hexGrid = canvas.scene.getFlag("procedural-hex-maps", "hexGridData");
     if (!hexGrid) {
         console.warn('No hex grid data found in scene flags');
         return;
     }
-
-    console.log('Hex grid data:', hexGrid);
 
     const hexData = hexGrid.find(hex => hex.id === parseInt(hexId));
 
@@ -268,16 +264,25 @@ function handleHexHover(event) {
             <div style="width: 100%;"><strong>Tile:</strong> ${hexData.fullTileName}</div>
             <div style="width: 50%;"><strong>Elevation:</strong> ${hexData.finalElevation.toFixed(2)}</div>
             <div style="width: 50%;"><strong>Temperature:</strong> ${hexData.finalTemperature.toFixed(2)}</div>
-            <div style="width: 50%;"><strong>Humidity:</strong> ${hexData.humidity.toFixed(2)}</div>
             <div style="width: 50%;"><strong>Precipitation:</strong> ${hexData.precipitation.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Humidity:</strong> ${hexData.humidity.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Moisture:</strong> ${hexData.finalMoisture.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Cloud Cover:</strong> ${hexData.cloudCover.toFixed(2)}</div>
             <div style="width: 50%;"><strong>Wind Direction:</strong> ${hexData.windDirection}</div>
             <div style="width: 50%;"><strong>Wind Intensity:</strong> ${hexData.finalWindIntensity.toFixed(2)}</div>
             <div style="width: 50%;"><strong>Vegetation Density:</strong> ${hexData.vegetationDensity.toFixed(2)}</div>
-            <div style="width: 50%;"><strong>isWater:</strong> ${hexData.isWater}</div>
             <div style="width: 50%;"><strong>Water Depth:</strong> ${hexData.waterDepth.toFixed(2)}</div>
-            <div style="width: 50%;"><strong>Moisture:</strong> ${hexData.finalMoisture.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Population:</strong> ${hexData.population}</div>
+            <div style="width: 50%;"><strong>Development Level:</strong> ${hexData.developmentLevel.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Pollution Level:</strong> ${hexData.pollutionLevel.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Radiation Level:</strong> ${hexData.radiationLevel.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Is Water:</strong> ${hexData.isWater}</div>
+            <div style="width: 50%;"><strong>Latitude:</strong> ${hexData.latitude.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Longitude:</strong> ${hexData.longitude.toFixed(2)}</div>
+            <div style="width: 50%;"><strong>Layer:</strong> ${hexData.layer}</div>
+            <div style="width: 50%;"><strong>Z-Index:</strong> ${hexData.zIndex}</div>
         </div>
-            `;
+        `;
         updateHexInfoBox(hexInfoContent);
     } else {
         console.warn('No hex data found for hexId:', hexId);
@@ -1081,20 +1086,28 @@ async function generateEnhancedHexMap(html) {
         const seed = parseInt(html.find('#main-seed').val()) || Math.floor(Math.random() * 1000000);
         console.log(`Generating enhanced hex map: ${width}x${height}, hex size: ${hexSize}, seed: ${seed}`);
 
-        // Load the latest land tile configuration
+        // Load the latest tile mappings
         const tileMapping = getCurrentLandTileConfiguration();
 
         console.log("Tile mapping used for generation:", tileMapping);
 
         const hexGrid = createHexGridData(width, height, hexSize, noiseData, tileMapping, seed);
 
-        const placedTiles = hexGrid.map(hex => ({
+        // Sort hexGrid by layer and z-index
+        hexGrid.sort((a, b) => {
+            if (a.layer === b.layer) {
+                return a.zIndex - b.zIndex;
+            }
+            return a.layer === 'background' ? -1 : 1;
+        });
+
+        const placedTiles = hexGrid.map((hex, index) => ({
             x: hex.x - (hexSize + 10) / 2 + (hex.selectedTile?.xOffset || 0),
             y: hex.y - hexSize / 2 + (hex.selectedTile?.yOffset || 0),
             width: hexSize + 10,
             height: hexSize,
             rotation: 0,
-            sort: hex.staggeredRow,
+            sort: index, // Use the sorted index for proper layering
             flags: { hexTile: true, hexId: hex.id },
             texture: {
                 src: hex.tilePath,
@@ -1173,7 +1186,6 @@ function createHexGridData(width, height, hexSize, noiseData, tileMapping, seed)
                 const hexData = new HexData(id, centerX, centerY, col, row);
                 hexData.setStaggeredRow(staggeredRow);
 
-                // Use the adjusted noise data
                 const noiseX = Math.floor(centerX / (width / 250));
                 const noiseY = Math.floor(centerY / (height / 250));
                 const index = noiseY * 250 + noiseX;
@@ -1186,37 +1198,42 @@ function createHexGridData(width, height, hexSize, noiseData, tileMapping, seed)
                 hexData.windDirection = Math.floor(random.random() * 8);
                 hexData.updateEnvironment();
 
-
-
-                // Add tags if needed (example)
-                hexData.tags = ['forest', 'snow']; // Example tags, adjust as needed
-
-                hexData.updateEnvironment();
-                hexData.determineTile(tileMapping);
-
-                // Apply offsets if they exist
-                if (hexData.selectedTile) {
-                    if (hexData.selectedTile.xOffset) {
-                        hexData.x += hexData.selectedTile.xOffset;
-                    }
-                    if (hexData.selectedTile.yOffset) {
-                        hexData.y += hexData.selectedTile.yOffset;
-                    }
-                }
+                // Set latitude and longitude
+                hexData.latitude = row / rows;
+                hexData.longitude = col / columns;
 
                 hexGrid.push(hexData);
             }
         }
-
     }
+
     // Generate wind patterns
     generateWindPatterns(hexGrid);
 
     // Generate moisture map
     generateMoistureMap(hexGrid);
 
+    // Apply tile mappings
+    applyTileMappings(hexGrid, tileMapping);
+
     return hexGrid;
 }
+
+function applyTileMappings(hexGrid, tileMapping) {
+    hexGrid.forEach(hexData => {
+        const matchingMapping = tileMapping.find(mapping => checkAllPlacementCriteria(hexData, mapping, hexGrid));
+
+        if (matchingMapping) {
+            hexData.determineTile(matchingMapping);
+            hexData.layer = matchingMapping.layer;
+            hexData.zIndex = matchingMapping.zIndex;
+        } else {
+            hexData.setDefaultTile();
+        }
+    });
+}
+
+
 
 function generateWindPatterns(hexGrid) {
     for (let i = 0; i < hexGrid.length; i++) {
@@ -1385,7 +1402,21 @@ class HexData {
         this.finalTemperature = 0;
         this.finalMoisture = 0;
         this.finalWindIntensity = 0;
+
+
+        this.latitude = 0; // 0 (south) to 1 (north)
+        this.longitude = 0; // 0 (west) to 1 (east)
+        this.isCoastal = false;
+        this.biome = '';
+        this.resources = [];
+        this.terrainRuggedness = 0;
+        this.distanceFromMapEdge = 0;
+        this.distanceFromMapCenter = 0;
+        this.layer = 'background';
+        this.zIndex = 0;
+
     }
+
 
     setStaggeredRow(staggeredRow) {
         this.staggeredRow = staggeredRow;
@@ -1427,6 +1458,9 @@ class HexData {
         this.finalWindIntensity = this.windIntensity;
         this.finalMoisture = this.moisture;
 
+        // Update other environmental factors
+        this.updateEnvironmentalFactors();
+
         console.log(`Hex ${this.id} final environmental values:`, {
             elevation: this.finalElevation,
             temperature: this.finalTemperature,
@@ -1434,8 +1468,17 @@ class HexData {
             moisture: this.finalMoisture,
             windIntensity: this.finalWindIntensity,
             isWater: this.isWater,
-            vegDensity: this.vegetationDensity
+            vegDensity: this.vegetationDensity,
+            humidity: this.humidity,
+            cloudCover: this.cloudCover,
+            population: this.population,
+            developmentLevel: this.developmentLevel,
+            pollutionLevel: this.pollutionLevel,
+            radiationLevel: this.radiationLevel
         });
+
+        this.updateTerrainRuggedness();
+        this.updateDistances();
     }
 
     updateDerivedCharacteristics() {
@@ -1444,6 +1487,22 @@ class HexData {
         this.determineBiomeType();
         this.updateMovementCost();
     }
+
+    updateEnvironmentalFactors() {
+        // These are placeholder calculations. Adjust as needed for your specific requirements.
+        //this.humidity = this.capValue((this.precipitation * 0.7 + this.temperature * 0.3) / 2);
+        //this.cloudCover = this.capValue((this.humidity * 0.8 + this.precipitation * 0.2) / 2);
+
+        // Population and development level could be based on various factors
+        // For now, we'll use random values. In a real scenario, these might be set based on game logic.
+        this.population = Math.floor(Math.random() * 1000);
+        this.developmentLevel = this.capValue(Math.random() * 10);
+
+        // Pollution and radiation levels could be influenced by population, development, and other factors
+        this.pollutionLevel = this.capValue((this.population / 1000 + this.developmentLevel / 2) / 2);
+        this.radiationLevel = this.capValue(Math.random() * this.pollutionLevel); // Just an example correlation
+    }
+
 
     determineBiomeType() {
         if (this.isWater) {
@@ -1488,6 +1547,17 @@ class HexData {
 
         // Cap the density between 0 and 10
         this.vegetationDensity = Math.max(0, Math.min(10, density));
+    }
+
+    updateTerrainRuggedness() {
+        // This is a placeholder. Implement actual calculation based on neighbors.
+        this.terrainRuggedness = Math.random() * 10;
+    }
+
+    updateDistances() {
+        // These are placeholders. Implement actual calculations.
+        this.distanceFromMapEdge = Math.min(this.latitude, 1 - this.latitude, this.longitude, 1 - this.longitude) * 10;
+        this.distanceFromMapCenter = Math.sqrt(Math.pow(this.latitude - 0.5, 2) + Math.pow(this.longitude - 0.5, 2)) * 10;
     }
 
     calculateMoisture() {
@@ -2458,9 +2528,6 @@ function displayTileMappings(html, tileMappings) {
 
     if (tileMappings.length > 0) {
         tileMappings.forEach((mapping, index) => {
-            console.log(`Displaying mapping: ${mapping.name}`);
-            console.log(`Wind Intensity: Low ${mapping.windIntensityLow}, High ${mapping.windIntensityHigh}`);
-
             const item = $(`
                 <div class="mapping-item" data-index="${index}">
                     <div class="mapping-header">
@@ -2473,47 +2540,71 @@ function displayTileMappings(html, tileMappings) {
                         </div>
                     </div>
                     <div class="mapping-content" style="display: none;">
-                        <div class="range-slider">
-                            <label>Elevation:</label>
-                            <input type="range" class="elevation-low" min="0" max="10" step="0.1" value="${mapping.elevationLow.toFixed(1)}">
-                            <input type="number" class="elevation-low-value" value="${mapping.elevationLow.toFixed(1)}" min="0" max="10" step="0.1">
-                            <input type="range" class="elevation-high" min="0" max="10" step="0.1" value="${mapping.elevationHigh.toFixed(1)}">
-                            <input type="number" class="elevation-high-value" value="${mapping.elevationHigh.toFixed(1)}" min="0" max="10" step="0.1">
+                        <div class="variable-selector">
+                            <select class="variable-dropdown">
+                                <option value="">Select a variable</option>
+                                <option value="elevation">Elevation</option>
+                                <option value="precipitation">Precipitation</option>
+                                <option value="temperature">Temperature</option>
+                                <option value="windIntensity">Wind Intensity</option>
+                                <option value="moisture">Moisture</option>
+                                <option value="humidity">Humidity</option>
+                                <option value="cloudCover">Cloud Cover</option>
+                                <option value="vegetationDensity">Vegetation Density</option>
+                                <option value="waterDepth">Water Depth</option>
+                                <option value="population">Population</option>
+                                <option value="developmentLevel">Development Level</option>
+                                <option value="pollutionLevel">Pollution Level</option>
+                                <option value="radiationLevel">Radiation Level</option>
+                            </select>
+                            <button class="add-variable-button"><i class="fas fa-plus"></i></button>
                         </div>
-                        <div class="range-slider">
-                            <label>Moisture:</label>
-                            <input type="range" class="moisture-low" min="0" max="10" step="0.1" value="${mapping.moistureLow.toFixed(1)}">
-                            <input type="number" class="moisture-low-value" value="${mapping.moistureLow.toFixed(1)}" min="0" max="10" step="0.1">
-                            <input type="range" class="moisture-high" min="0" max="10" step="0.1" value="${mapping.moistureHigh.toFixed(1)}">
-                            <input type="number" class="moisture-high-value" value="${mapping.moistureHigh.toFixed(1)}" min="0" max="10" step="0.1">
+                        <div class="variable-ranges">
+                            ${Object.entries(mapping.ranges || {}).map(([variable, range]) => `
+                                <div class="range-slider" data-variable="${variable}">
+                                    <label>${variable}:</label>
+                                    <input type="range" class="${variable}-low" min="0" max="10" step="0.1" value="${range.low.toFixed(1)}">
+                                    <input type="number" class="${variable}-low-value" value="${range.low.toFixed(1)}" min="0" max="10" step="0.1">
+                                    <input type="range" class="${variable}-high" min="0" max="10" step="0.1" value="${range.high.toFixed(1)}">
+                                    <input type="number" class="${variable}-high-value" value="${range.high.toFixed(1)}" min="0" max="10" step="0.1">
+                                    <button class="remove-variable-button"><i class="fas fa-minus"></i></button>
+                                </div>
+                            `).join('')}
                         </div>
-                        <div class="range-slider">
-                            <label>Temperature:</label>
-                            <input type="range" class="temperature-low" min="0" max="10" step="0.1" value="${mapping.temperatureLow.toFixed(1)}">
-                            <input type="number" class="temperature-low-value" value="${mapping.temperatureLow.toFixed(1)}" min="0" max="10" step="0.1">
-                            <input type="range" class="temperature-high" min="0" max="10" step="0.1" value="${mapping.temperatureHigh.toFixed(1)}">
-                            <input type="number" class="temperature-high-value" value="${mapping.temperatureHigh.toFixed(1)}" min="0" max="10" step="0.1">
+                        <div class="placement-criteria-selector">
+                            <select class="placement-criteria-dropdown">
+                                <option value="">Select a placement criterion</option>
+                                <option value="adjacent">Adjacent to Tile Type</option>
+                                <option value="elevation-relative">Elevation Relative to Neighbors</option>
+                                <option value="coastal">On Coast</option>
+                                <option value="biome-intersection">At Biome Intersection</option>
+                                <option value="latitude">Based on Latitude</option>
+                                <option value="longitude">Based on Longitude</option>
+                                <option value="random-chance">Random Chance</option>
+                                <option value="min-distance">Minimum Distance from Same Type</option>
+                                <option value="resources">Based on Resources</option>
+                                <option value="differential">Variable Differential</option>
+                                <option value="cluster">In Clusters</option>
+                                <option value="ruggedness">Terrain Ruggedness</option>
+                                <option value="map-proximity">Proximity to Map Edges/Center</option>
+                            </select>
+                            <button class="add-placement-criterion"><i class="fas fa-plus"></i></button>
                         </div>
-                        <div class="range-slider">
-                            <label>Wind Intensity:</label>
-                            <input type="range" class="wind-intensity-low" min="0" max="10" step="0.1" value="${mapping.windIntensityLow !== undefined ? mapping.windIntensityLow.toFixed(1) : '0.0'}">
-                            <input type="number" class="wind-intensity-low-value" value="${mapping.windIntensityLow !== undefined ? mapping.windIntensityLow.toFixed(1) : '0.0'}" min="0" max="10" step="0.1">
-                            <input type="range" class="wind-intensity-high" min="0" max="10" step="0.1" value="${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}">
-                            <input type="number" class="wind-intensity-high-value" value="${mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh.toFixed(1) : '10.0'}" min="0" max="10" step="0.1">
+                        <div class="placement-criteria-list">
+                            ${(mapping.placementCriteria || []).map(criterion =>
+                displayPlacementCriterion(criterion)
+            ).join('')}
                         </div>
-                        <div class="range-slider">
-                            <label>Vegetation Density:</label>
-                            <input type="range" class="vegetation-density-low" min="0" max="10" step="0.1" value="${mapping.vegetationDensityLow !== undefined ? mapping.vegetationDensityLow.toFixed(1) : '0.0'}">
-                            <input type="number" class="vegetation-density-low-value" value="${mapping.vegetationDensityLow !== undefined ? mapping.vegetationDensityLow.toFixed(1) : '0.0'}" min="0" max="10" step="0.1">
-                            <input type="range" class="vegetation-density-high" min="0" max="10" step="0.1" value="${mapping.vegetationDensityHigh !== undefined ? mapping.vegetationDensityHigh.toFixed(1) : '10.0'}">
-                            <input type="number" class="vegetation-density-high-value" value="${mapping.vegetationDensityHigh !== undefined ? mapping.vegetationDensityHigh.toFixed(1) : '10.0'}" min="0" max="10" step="0.1">
-                        </div>
-                        <div class="range-slider">
-                            <label>Water Depth:</label>
-                            <input type="range" class="water-depth-low" min="0" max="10" step="0.1" value="${mapping.waterDepthLow !== undefined ? mapping.waterDepthLow.toFixed(1) : '0.0'}">
-                            <input type="number" class="water-depth-low-value" value="${mapping.waterDepthLow !== undefined ? mapping.waterDepthLow.toFixed(1) : '0.0'}" min="0" max="10" step="0.1">
-                            <input type="range" class="water-depth-high" min="0" max="10" step="0.1" value="${mapping.waterDepthHigh !== undefined ? mapping.waterDepthHigh.toFixed(1) : '10.0'}">
-                            <input type="number" class="water-depth-high-value" value="${mapping.waterDepthHigh !== undefined ? mapping.waterDepthHigh.toFixed(1) : '10.0'}" min="0" max="10" step="0.1">
+                        <div class="layer-settings">
+                            <label>Layer:
+                                <select class="layer-select">
+                                    <option value="background" ${mapping.layer === 'background' ? 'selected' : ''}>Background</option>
+                                    <option value="foreground" ${mapping.layer === 'foreground' ? 'selected' : ''}>Foreground</option>
+                                </select>
+                            </label>
+                            <label>Z-Index:
+                                <input type="number" class="z-index-input" min="0" max="10" value="${mapping.zIndex || 0}">
+                            </label>
                         </div>
                         <div class="tag-list">
                             <label>Tags:</label>
@@ -2540,13 +2631,17 @@ function displayTileMappings(html, tileMappings) {
     list.append(fragment);
 
     // Add event listeners
-    list.find('input[type="range"], input[type="number"]').on('input', updateRangeValue);
-    list.find('input[type="range"], input[type="number"]').on('change', event => updateMapping(event, tileMappings));
     list.find('.mapping-header').click(toggleMappingContent);
     list.find('.mapping-name').on('change', event => updateMappingName(event, tileMappings));
     list.find('.mapping-tags').on('change', event => updateMappingTags(event, tileMappings));
     list.find('.x-offset, .y-offset').on('change', event => updateTileOffset(event, tileMappings));
     list.find('.delete-mapping-button').click(event => deleteMapping(event, tileMappings));
+    list.find('.add-variable-button').click(event => addVariableRange(event, tileMappings));
+    list.find('.remove-variable-button').click(event => removeVariableRange(event, tileMappings));
+    list.find('.add-placement-criterion').click(event => addPlacementCriterion(event, tileMappings));
+    list.find('input[type="range"], input[type="number"]').on('input', updateRangeValue);
+    list.find('input[type="range"], input[type="number"]').on('change', event => updateMapping(event, tileMappings));
+    list.find('.layer-select, .z-index-input').change(event => updateLayerSettings(event, tileMappings));
 
     // Add tooltip functionality
     list.find('.draggable-tile').on('mouseover', showTileTooltip);
@@ -2563,6 +2658,60 @@ function displayTileMappings(html, tileMappings) {
 
 
 
+function addVariableRange(event, tileMappings) {
+    const $mappingItem = $(event.currentTarget).closest('.mapping-item');
+    const index = $mappingItem.data('index');
+    const variable = $mappingItem.find('.variable-dropdown').val();
+
+    if (!variable) return;
+
+    const mapping = tileMappings[index];
+    if (!mapping.ranges) mapping.ranges = {};
+
+    if (mapping.ranges[variable]) {
+        ui.notifications.warn(`Range for ${variable} already exists.`);
+        return;
+    }
+
+    mapping.ranges[variable] = { low: 0, high: 10 };
+
+    const $rangeSlider = $(`
+        <div class="range-slider" data-variable="${variable}">
+            <label>${variable}:</label>
+            <input type="range" class="${variable}-low" min="0" max="10" step="0.1" value="0">
+            <input type="number" class="${variable}-low-value" value="0" min="0" max="10" step="0.1">
+            <input type="range" class="${variable}-high" min="0" max="10" step="0.1" value="10">
+            <input type="number" class="${variable}-high-value" value="10" min="0" max="10" step="0.1">
+            <button class="remove-variable-button"><i class="fas fa-minus"></i></button>
+        </div>
+    `);
+
+    $mappingItem.find('.variable-ranges').append($rangeSlider);
+
+    $rangeSlider.find('input[type="range"], input[type="number"]').on('input', updateRangeValue);
+    $rangeSlider.find('input[type="range"], input[type="number"]').on('change', event => updateMapping(event, tileMappings));
+    $rangeSlider.find('.remove-variable-button').click(event => removeVariableRange(event, tileMappings));
+
+    saveCurrentTileMappings(getCurrentTilemapType());
+}
+
+function removeVariableRange(event, tileMappings) {
+    const $rangeSlider = $(event.currentTarget).closest('.range-slider');
+    const $mappingItem = $rangeSlider.closest('.mapping-item');
+    const index = $mappingItem.data('index');
+    const variable = $rangeSlider.data('variable');
+
+    const mapping = tileMappings[index];
+    if (mapping.ranges && mapping.ranges[variable]) {
+        delete mapping.ranges[variable];
+    }
+
+    $rangeSlider.remove();
+    saveCurrentTileMappings(getCurrentTilemapType());
+}
+
+
+
 function updateTileMappingStructure(tileMappings) {
     if (!Array.isArray(tileMappings)) {
         console.warn('tileMappings is not an array, initializing as empty array');
@@ -2572,18 +2721,7 @@ function updateTileMappingStructure(tileMappings) {
         const updatedMapping = {
             name: mapping.name || 'Unnamed Mapping',
             tiles: Array.isArray(mapping.tiles) ? mapping.tiles : [],
-            elevationLow: mapping.elevationLow !== undefined ? mapping.elevationLow : 0,
-            elevationHigh: mapping.elevationHigh !== undefined ? mapping.elevationHigh : 10,
-            temperatureLow: mapping.temperatureLow !== undefined ? mapping.temperatureLow : 0,
-            temperatureHigh: mapping.temperatureHigh !== undefined ? mapping.temperatureHigh : 10,
-            moistureLow: mapping.moistureLow !== undefined ? mapping.moistureLow : 0,
-            moistureHigh: mapping.moistureHigh !== undefined ? mapping.moistureHigh : 10,
-            windIntensityLow: mapping.windIntensityLow !== undefined ? mapping.windIntensityLow : 0,
-            windIntensityHigh: mapping.windIntensityHigh !== undefined ? mapping.windIntensityHigh : 10,
-            vegetationDensityLow: mapping.vegetationDensityLow !== undefined ? mapping.vegetationDensityLow : 0,
-            vegetationDensityHigh: mapping.vegetationDensityHigh !== undefined ? mapping.vegetationDensityHigh : 10,
-            waterDepthLow: mapping.waterDepthLow !== undefined ? mapping.waterDepthLow : 0,
-            waterDepthHigh: mapping.waterDepthHigh !== undefined ? mapping.waterDepthHigh : 10,
+            ranges: mapping.ranges || {},
             tags: Array.isArray(mapping.tags) ? mapping.tags : []
         };
         console.log(`Mapping "${updatedMapping.name}" updated`);
@@ -2690,36 +2828,29 @@ function updateRangeValue(event) {
     }
 }
 
-function updateMapping(event) {
+function updateMapping(event, tileMappings) {
     const $input = $(event.currentTarget);
-    const index = $input.closest('.mapping-item').data('index');
+    const $mappingItem = $input.closest('.mapping-item');
+    const index = $mappingItem.data('index');
     const mapping = tileMappings[index];
-    const field = $input.attr('class');
+    const $rangeSlider = $input.closest('.range-slider');
+    const variable = $rangeSlider.data('variable');
 
-    const newValue = parseFloat($input.val());
+    if (!mapping.ranges) mapping.ranges = {};
+    if (!mapping.ranges[variable]) mapping.ranges[variable] = { low: 0, high: 10 };
 
-    console.log(`Updating ${field} for "${mapping.name}" from ${mapping[field]} to ${newValue}`);
+    const isLow = $input.hasClass(`${variable}-low`) || $input.hasClass(`${variable}-low-value`);
+    const value = parseFloat($input.val());
 
-    if (field.includes('vegetation-density')) {
-        const property = field.includes('-low') ? 'vegetationDensityLow' : 'vegetationDensityHigh';
-        mapping[property] = newValue;
-    } else if (field.includes('water-depth')) {
-        const property = field.includes('-low') ? 'waterDepthLow' : 'waterDepthHigh';
-        mapping[property] = newValue;
-    } else if (field === 'wind-intensity-low') {
-        mapping.windIntensityLow = newValue;
-    } else if (field === 'wind-intensity-high') {
-        mapping.windIntensityHigh = newValue;
-    } else if (field === 'biomeTags') {
-        mapping.biomeTags = $input.val().split(',').map(tag => tag.trim());
+    if (isLow) {
+        mapping.ranges[variable].low = value;
     } else {
-        const propertyName = field.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
-        mapping[propertyName] = newValue;
+        mapping.ranges[variable].high = value;
     }
 
-    console.log(`Updated mapping:`, JSON.parse(JSON.stringify(mapping)));
+    console.log(`Updated ${variable} range for "${mapping.name}":`, mapping.ranges[variable]);
 
-    game.settings.set('procedural-hex-maps', 'tileMappings', tileMappings);
+    saveCurrentTileMappings(getCurrentTilemapType());
 }
 
 function updateMappingName(event) {
@@ -2743,19 +2874,11 @@ function addNewMapping(tileMappings, tilemapType) {
                     xOffset: 0,
                     yOffset: 0
                 }],
-                elevationLow: 0.0,
-                elevationHigh: 10.0,
-                moistureLow: 0.0,
-                moistureHigh: 10.0,
-                temperatureLow: 0.0,
-                temperatureHigh: 10.0,
-                windIntensityLow: 0.0,
-                windIntensityHigh: 10.0,
-                vegetationDensityLow: 0.0,
-                vegetationDensityHigh: 10.0,
-                waterDepthLow: 0.0,
-                waterDepthHigh: 10.0,
-                tags: []
+                ranges: {},
+                placementCriteria: [],
+                tags: [],
+                layer: 'background',
+                zIndex: 0
             };
             tileMappings.push(newMapping);
             saveCurrentTileMappings(tilemapType);
@@ -2779,6 +2902,382 @@ function getNeighbors(hex, hexGrid) {
         const neighborY = hex.y + dir.dy;
         return hexGrid.find(h => Math.abs(h.x - neighborX) < 0.1 && Math.abs(h.y - neighborY) < 0.1);
     }).filter(Boolean);
+}
+
+function addPlacementCriterion(event, tileMappings) {
+    const $mappingItem = $(event.currentTarget).closest('.mapping-item');
+    const index = $mappingItem.data('index');
+    const criterionType = $mappingItem.find('.placement-criteria-dropdown').val();
+
+    if (!criterionType) return;
+
+    const mapping = tileMappings[index];
+    if (!mapping.placementCriteria) mapping.placementCriteria = [];
+
+    let newCriterion;
+    switch (criterionType) {
+        case 'adjacent':
+            newCriterion = { type: 'adjacent', tileType: '', count: 1, distance: 1, variable: '', min: 0, max: 10 };
+            break;
+        case 'elevation-relative':
+            newCriterion = { type: 'elevation-relative', difference: 1, condition: 'higher', count: 'all' };
+            break;
+        case 'coastal':
+            newCriterion = { type: 'coastal' };
+            break;
+        case 'biome-intersection':
+            newCriterion = { type: 'biome-intersection' };
+            break;
+        case 'latitude':
+            newCriterion = { type: 'latitude', min: 0, max: 1 };
+            break;
+        case 'longitude':
+            newCriterion = { type: 'longitude', min: 0, max: 1 };
+            break;
+        case 'random-chance':
+            newCriterion = { type: 'random-chance', probability: 0.1 };
+            break;
+        case 'min-distance':
+            newCriterion = { type: 'min-distance', distance: 3 };
+            break;
+        case 'resources':
+            newCriterion = { type: 'resources', resource: '' };
+            break;
+        case 'differential':
+            newCriterion = { type: 'differential', variable: 'temperature', condition: 'colder' };
+            break;
+        case 'cluster':
+            newCriterion = { type: 'cluster', count: 3 };
+            break;
+        case 'ruggedness':
+            newCriterion = { type: 'ruggedness', min: 0, max: 10 };
+            break;
+        case 'map-proximity':
+            newCriterion = { type: 'map-proximity', edge: true, center: false, min: 0, max: 5 };
+            break;
+        default:
+            console.warn(`Unknown criterion type: ${criterionType}`);
+            return;
+    }
+
+    mapping.placementCriteria.push(newCriterion);
+    const $criterionElement = $(displayPlacementCriterion(newCriterion));
+    $mappingItem.find('.placement-criteria-list').append($criterionElement);
+
+    $criterionElement.find('.remove-criterion-button').click(event => removePlacementCriterion(event, tileMappings));
+    $criterionElement.find('input, select').change(event => updatePlacementCriterion(event, tileMappings));
+
+    saveCurrentTileMappings(getCurrentTilemapType());
+}
+
+function removePlacementCriterion(event, tileMappings) {
+    const $criterionElement = $(event.currentTarget).closest('.placement-criterion');
+    const $mappingItem = $criterionElement.closest('.mapping-item');
+    const mappingIndex = $mappingItem.data('index');
+    const criterionIndex = $criterionElement.index();
+
+    // Remove the criterion from the tileMappings array
+    tileMappings[mappingIndex].placementCriteria.splice(criterionIndex, 1);
+
+    // Remove the criterion element from the DOM
+    $criterionElement.remove();
+
+    // Save the updated tileMappings
+    saveCurrentTileMappings(getCurrentTilemapType());
+}
+
+function displayPlacementCriterion(criterion) {
+    let html = '';
+    switch (criterion.type) {
+        case 'adjacent':
+            html = `
+                <div class="placement-criterion" data-type="adjacent">
+                    <span>Adjacent to 
+                        <input type="number" class="adjacent-count" value="${criterion.count}" min="1"> 
+                        <input type="text" class="tile-type" value="${criterion.tileType}" placeholder="Tile Type">
+                        tiles within
+                        <input type="number" class="distance" value="${criterion.distance}" min="1">
+                        hexes where
+                        <select class="variable-select">
+                            ${getVariableOptions(criterion.variable)}
+                        </select>
+                        is between
+                        <input type="number" class="min-value" value="${criterion.min}" step="0.1">
+                        and
+                        <input type="number" class="max-value" value="${criterion.max}" step="0.1">
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'elevation-relative':
+            html = `
+                <div class="placement-criterion" data-type="elevation-relative">
+                    <span>Elevation is 
+                        <select class="condition-select">
+                            <option value="higher" ${criterion.condition === 'higher' ? 'selected' : ''}>higher</option>
+                            <option value="lower" ${criterion.condition === 'lower' ? 'selected' : ''}>lower</option>
+                        </select>
+                        by
+                        <input type="number" class="difference" value="${criterion.difference}" step="0.1">
+                        than
+                        <select class="count-select">
+                            <option value="all" ${criterion.count === 'all' ? 'selected' : ''}>all</option>
+                            <option value="any" ${criterion.count === 'any' ? 'selected' : ''}>any</option>
+                        </select>
+                        adjacent tiles
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'coastal':
+            html = `
+                <div class="placement-criterion" data-type="coastal">
+                    <span>On Coast</span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'biome-intersection':
+            html = `
+                <div class="placement-criterion" data-type="biome-intersection">
+                    <span>At Biome Intersection</span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'latitude':
+        case 'longitude':
+            html = `
+                <div class="placement-criterion" data-type="${criterion.type}">
+                    <span>${criterion.type.charAt(0).toUpperCase() + criterion.type.slice(1)} between
+                        <input type="number" class="min-value" value="${criterion.min}" min="0" max="1" step="0.01">
+                        and
+                        <input type="number" class="max-value" value="${criterion.max}" min="0" max="1" step="0.01">
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'random-chance':
+            html = `
+                <div class="placement-criterion" data-type="random-chance">
+                    <span>Random chance of
+                        <input type="number" class="probability" value="${criterion.probability}" min="0" max="1" step="0.01">
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'min-distance':
+            html = `
+                <div class="placement-criterion" data-type="min-distance">
+                    <span>Minimum distance of
+                        <input type="number" class="distance" value="${criterion.distance}" min="1">
+                        hexes from other instances
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'resources':
+            html = `
+                <div class="placement-criterion" data-type="resources">
+                    <span>Has resource:
+                        <input type="text" class="resource" value="${criterion.resource}">
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'differential':
+            html = `
+                <div class="placement-criterion" data-type="differential">
+                    <span>
+                        <select class="variable-select">
+                            ${getVariableOptions(criterion.variable)}
+                        </select>
+                        is
+                        <select class="condition-select">
+                            <option value="colder" ${criterion.condition === 'colder' ? 'selected' : ''}>colder</option>
+                            <option value="warmer" ${criterion.condition === 'warmer' ? 'selected' : ''}>warmer</option>
+                            <option value="lower" ${criterion.condition === 'lower' ? 'selected' : ''}>lower</option>
+                            <option value="higher" ${criterion.condition === 'higher' ? 'selected' : ''}>higher</option>
+                        </select>
+                        than average
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'cluster':
+            html = `
+                <div class="placement-criterion" data-type="cluster">
+                    <span>Part of a cluster of at least
+                        <input type="number" class="count" value="${criterion.count}" min="2">
+                        tiles
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'ruggedness':
+            html = `
+                <div class="placement-criterion" data-type="ruggedness">
+                    <span>Terrain ruggedness between
+                        <input type="number" class="min-value" value="${criterion.min}" min="0" max="10" step="0.1">
+                        and
+                        <input type="number" class="max-value" value="${criterion.max}" min="0" max="10" step="0.1">
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        case 'map-proximity':
+            html = `
+                <div class="placement-criterion" data-type="map-proximity">
+                    <span>
+                        <select class="proximity-type">
+                            <option value="edge" ${criterion.edge ? 'selected' : ''}>Distance from map edge</option>
+                            <option value="center" ${!criterion.edge ? 'selected' : ''}>Distance from map center</option>
+                        </select>
+                        between
+                        <input type="number" class="min-value" value="${criterion.min}" min="0" max="10" step="0.1">
+                        and
+                        <input type="number" class="max-value" value="${criterion.max}" min="0" max="10" step="0.1">
+                    </span>
+                    <button class="remove-criterion-button"><i class="fas fa-minus"></i></button>
+                </div>
+            `;
+            break;
+        default:
+            console.warn(`Unknown criterion type: ${criterion.type}`);
+            return '';
+    }
+    return html;
+}
+
+function getVariableOptions(selectedVariable) {
+    const variables = [
+        'elevation', 'precipitation', 'temperature', 'windIntensity', 'moisture',
+        'humidity', 'cloudCover', 'vegetationDensity', 'waterDepth', 'population',
+        'developmentLevel', 'pollutionLevel', 'radiationLevel'
+    ];
+    return variables.map(variable =>
+        `<option value="${variable}" ${variable === selectedVariable ? 'selected' : ''}>${variable}</option>`
+    ).join('');
+}
+
+
+function checkAllPlacementCriteria(hexData, mapping, hexGrid) {
+    return (mapping.placementCriteria || []).every(criterion => {
+        switch (criterion.type) {
+            case 'adjacent':
+                return checkAdjacency(hexData, criterion, hexGrid);
+            case 'elevation-relative':
+                return checkRelativeElevation(hexData, criterion, hexGrid);
+            case 'coastal':
+                return hexData.isCoastal;
+            case 'biome-intersection':
+                return checkBiomeIntersection(hexData, hexGrid);
+            case 'latitude':
+                return hexData.latitude >= criterion.min && hexData.latitude <= criterion.max;
+            case 'longitude':
+                return hexData.longitude >= criterion.min && hexData.longitude <= criterion.max;
+            case 'random-chance':
+                return Math.random() < criterion.probability;
+            case 'min-distance':
+                return checkMinDistance(hexData, criterion, hexGrid);
+            case 'resources':
+                return hexData.resources.includes(criterion.resource);
+            case 'differential':
+                return checkDifferential(hexData, criterion, hexGrid);
+            case 'cluster':
+                return checkCluster(hexData, criterion, hexGrid);
+            case 'ruggedness':
+                return hexData.terrainRuggedness >= criterion.min && hexData.terrainRuggedness <= criterion.max;
+            case 'map-proximity':
+                return checkMapProximity(hexData, criterion);
+            default:
+                console.warn(`Unknown criterion type: ${criterion.type}`);
+                return true;
+        }
+    });
+}
+
+function checkAdjacency(hexData, criterion, hexGrid) {
+    const neighbors = getNeighbors(hexData, hexGrid, criterion.distance);
+    const matchingNeighbors = neighbors.filter(neighbor => {
+        return neighbor.tileType === criterion.tileType &&
+            neighbor[criterion.variable] >= criterion.min &&
+            neighbor[criterion.variable] <= criterion.max;
+    });
+    return matchingNeighbors.length >= criterion.count;
+}
+
+function checkRelativeElevation(hexData, criterion, hexGrid) {
+    const neighbors = getNeighbors(hexData, hexGrid, 1);
+    const comparisonFunc = criterion.condition === 'higher' ?
+        (a, b) => a > b + criterion.difference :
+        (a, b) => a < b - criterion.difference;
+
+    if (criterion.count === 'all') {
+        return neighbors.every(neighbor => comparisonFunc(hexData.elevation, neighbor.elevation));
+    } else {
+        return neighbors.some(neighbor => comparisonFunc(hexData.elevation, neighbor.elevation));
+    }
+}
+
+function checkBiomeIntersection(hexData, hexGrid) {
+    const neighbors = getNeighbors(hexData, hexGrid, 1);
+    const uniqueBiomes = new Set(neighbors.map(neighbor => neighbor.biome));
+    return uniqueBiomes.size > 1;
+}
+
+function checkMinDistance(hexData, criterion, hexGrid) {
+    const sameTypeTiles = hexGrid.filter(hex => hex.tileType === hexData.tileType);
+    return sameTypeTiles.every(tile =>
+        calculateDistance(hexData, tile) >= criterion.distance || tile === hexData
+    );
+}
+
+function checkDifferential(hexData, criterion, hexGrid) {
+    const average = calculateAverage(hexGrid, criterion.variable);
+    if (criterion.condition === 'colder' || criterion.condition === 'lower') {
+        return hexData[criterion.variable] < average;
+    } else {
+        return hexData[criterion.variable] > average;
+    }
+}
+
+function checkCluster(hexData, criterion, hexGrid) {
+    const neighbors = getNeighbors(hexData, hexGrid, 1);
+    const sameTypeTiles = neighbors.filter(neighbor => neighbor.tileType === hexData.tileType);
+    return sameTypeTiles.length >= criterion.count - 1; // -1 because we're not counting the current tile
+}
+
+function checkMapProximity(hexData, criterion) {
+    if (criterion.edge) {
+        return hexData.distanceFromMapEdge >= criterion.min && hexData.distanceFromMapEdge <= criterion.max;
+    } else {
+        return hexData.distanceFromMapCenter >= criterion.min && hexData.distanceFromMapCenter <= criterion.max;
+    }
+}
+
+function getNeighbors(hexData, hexGrid, distance) {
+    return hexGrid.filter(hex => calculateDistance(hexData, hex) <= distance && hex !== hexData);
+}
+
+function calculateDistance(hex1, hex2) {
+    const dx = hex1.col - hex2.col;
+    const dy = hex1.row - hex2.row;
+    return Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dx + dy));
+}
+
+function calculateAverage(hexGrid, variable) {
+    const sum = hexGrid.reduce((acc, hex) => acc + hex[variable], 0);
+    return sum / hexGrid.length;
 }
 
 
@@ -2869,6 +3368,60 @@ function deleteMapping(event, tileMappings) {
         },
         default: "no"
     }).render(true);
+}
+
+function updatePlacementCriterion(event, tileMappings) {
+    const $input = $(event.currentTarget);
+    const $criterionElement = $input.closest('.placement-criterion');
+    const $mappingItem = $criterionElement.closest('.mapping-item');
+    const mappingIndex = $mappingItem.data('index');
+    const criterionIndex = $criterionElement.index();
+    const criterion = tileMappings[mappingIndex].placementCriteria[criterionIndex];
+
+    switch (criterion.type) {
+        case 'adjacent':
+            criterion.count = parseInt($criterionElement.find('.adjacent-count').val());
+            criterion.tileType = $criterionElement.find('.tile-type').val();
+            criterion.distance = parseInt($criterionElement.find('.distance').val());
+            criterion.variable = $criterionElement.find('.variable-select').val();
+            criterion.min = parseFloat($criterionElement.find('.min-value').val());
+            criterion.max = parseFloat($criterionElement.find('.max-value').val());
+            break;
+        case 'elevation-relative':
+            criterion.condition = $criterionElement.find('.condition-select').val();
+            criterion.difference = parseFloat($criterionElement.find('.difference').val());
+            criterion.count = $criterionElement.find('.count-select').val();
+            break;
+        case 'latitude':
+        case 'longitude':
+        case 'ruggedness':
+            criterion.min = parseFloat($criterionElement.find('.min-value').val());
+            criterion.max = parseFloat($criterionElement.find('.max-value').val());
+            break;
+        case 'random-chance':
+            criterion.probability = parseFloat($criterionElement.find('.probability').val());
+            break;
+        case 'min-distance':
+            criterion.distance = parseInt($criterionElement.find('.distance').val());
+            break;
+        case 'resources':
+            criterion.resource = $criterionElement.find('.resource').val();
+            break;
+        case 'differential':
+            criterion.variable = $criterionElement.find('.variable-select').val();
+            criterion.condition = $criterionElement.find('.condition-select').val();
+            break;
+        case 'cluster':
+            criterion.count = parseInt($criterionElement.find('.count').val());
+            break;
+        case 'map-proximity':
+            criterion.edge = $criterionElement.find('.proximity-type').val() === 'edge';
+            criterion.min = parseFloat($criterionElement.find('.min-value').val());
+            criterion.max = parseFloat($criterionElement.find('.max-value').val());
+            break;
+    }
+
+    saveCurrentTileMappings(getCurrentTilemapType());
 }
 
 function getCurrentTilemapType() {
